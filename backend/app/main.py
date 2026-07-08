@@ -67,6 +67,12 @@ def _load_benchmark() -> dict:
             return default
     return default
 
+@app.get("/")
+def root():
+    return {
+        "message": "Hazentra Backend is running",
+        "status": "ok"
+    }
 
 @app.get("/api/health")
 def health():
