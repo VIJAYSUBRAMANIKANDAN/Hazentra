@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_USER: clearvision
       POSTGRES_PASSWORD: clearvision
-      POSTGRES_DB: clearvision
+      POSTGRES_DB: postgresql://postgres.vhheymbeakhuxfxdkutx:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true
     ports:
       - "5432:5432"
     volumes:
@@ -19,7 +19,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      ALLOWED_ORIGINS: "http://localhost:3000"
+      ALLOWED_ORIGINS: "https://hazentra.vercel.app/"
     volumes:
       - ./backend/weights:/app/weights
 
@@ -30,7 +30,7 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: "postgresql://clearvision:clearvision@db:5432/clearvision?schema=public"
-      NEXT_PUBLIC_MODEL_API_URL: "http://localhost:8000"
+      NEXT_PUBLIC_MODEL_API_URL: "https://cooperative-spirit-production-fa2b.up.railway.app/"
     depends_on:
       - db
       - backend
