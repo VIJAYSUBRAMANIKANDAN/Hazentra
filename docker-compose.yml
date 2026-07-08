@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clearvision
+      POSTGRES_PASSWORD: clearvision
+      POSTGRES_DB: clearvision
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      ALLOWED_ORIGINS: "http://localhost:3000"
+    volumes:
+      - ./backend/weights:/app/weights
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://clearvision:clearvision@db:5432/clearvision?schema=public"
+      NEXT_PUBLIC_MODEL_API_URL: "http://localhost:8000"
+    depends_on:
+      - db
+      - backend
+
+volumes:
+  db_data:
