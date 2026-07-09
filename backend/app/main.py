@@ -20,13 +20,16 @@ CHECKPOINT_PATH = os.environ.get(
 BENCHMARK_REPORT_PATH = os.environ.get(
     "BENCHMARK_REPORT_PATH", "weights/bulk_evaluation_report.json"
 )
+import os
+
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
     "http://localhost:3000,https://hazentra.vercel.app"
 ).split(",")
+
 MAX_UPLOAD_MB = float(os.environ.get("MAX_UPLOAD_MB", "15"))
 
-app = FastAPI()
+app = FastAPI(title="Hazentra", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
