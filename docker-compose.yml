@@ -5,9 +5,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: clearvision
-      POSTGRES_PASSWORD: clearvision
-      POSTGRES_DB: postgresql://postgres.vhheymbeakhuxfxdkutx:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+      POSTGRES_USER: Hazentra
+      POSTGRES_PASSWORD: Shivan0711@
+      POSTGRES_DB: postgresql://postgres.vhheymbeakhuxfxdkutx:Shivan0711%40@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true
     ports:
       - "5432:5432"
     volumes:
@@ -19,7 +19,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      ALLOWED_ORIGINS: "https://hazentra.vercel.app/"
+      ALLOWED_ORIGINS: "http://localhost:8000"
     volumes:
       - ./backend/weights:/app/weights
 
@@ -29,8 +29,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: "postgresql://clearvision:clearvision@db:5432/clearvision?schema=public"
-      NEXT_PUBLIC_MODEL_API_URL: "https://cooperative-spirit-production-fa2b.up.railway.app/"
+      DATABASE_URL: "postgresql://postgres.vhheymbeakhuxfxdkutx:Shivan0711%40@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+      NEXT_PUBLIC_MODEL_API_URL: "http://localhost:3000"
     depends_on:
       - db
       - backend
