@@ -21,7 +21,9 @@ export type QueueStatus = "pending" | "uploading" | "processing" | "done" | "err
 
 export interface QueueItem {
   file: File;
+  previewUrl: string;
   progress: number;
   status: QueueStatus;
+  result?: DehazeResult;
   errorMessage?: string;
 }

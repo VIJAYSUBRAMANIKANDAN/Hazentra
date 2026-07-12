@@ -1,10 +1,11 @@
 import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, FileImage, X, CheckCircle2 } from "lucide-react";
+import { UploadCloud, X, CheckCircle2, Download, Loader2 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import { useAppStore } from "../lib/store";
 import { dehazeImage } from "../lib/api";
+import { upscaleDataUrlTo4K } from "../lib/upscale";
 import type { QueueItem } from "../lib/types";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/jpg"];
@@ -16,6 +17,7 @@ export default function Upload() {
   const [dragOver, setDragOver] = useState(false);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [downloadingIdx, setDownloadingIdx] = useState<number | null>(null);
   const setBatchResults = useAppStore((s) => s.setBatchResults);
   const addBatchResult = useAppStore((s) => s.addBatchResult);
 
@@ -23,10 +25,10 @@ export default function Upload() {
     async (file: File, idx: number) => {
       setQueue((q) => q.map((it, i) => (i === idx ? { ...it, status: "uploading" } : it)));
       try {
-        const result = await dehazeImage(file, (pct) => {
-          setQueue((q) => q.map((it, i) => (i === idx ? { ...it, progress: pct } : it)));
+        const result = await dehazeImage(file, (pct, stage) => {
+          setQueue((q) => q.map((it, i) => (i === idx ? { ...it, progress: pct, status: stage } : it)));
         });
-        setQueue((q) => q.map((it, i) => (i === idx ? { ...it, status: "done", progress: 100 } : it)));
+        setQueue((q) => q.map((it, i) => (i === idx ? { ...it, status: "done", progress: 100, result } : it)));
         addBatchResult(result);
       } catch (e) {
         setQueue((q) =>
@@ -66,7 +68,12 @@ export default function Upload() {
         }
 
         const startIndex = current.length;
-        const newItems: QueueItem[] = accepted.map((file) => ({ file, progress: 0, status: "pending" }));
+        const newItems: QueueItem[] = accepted.map((file) => ({
+          file,
+          previewUrl: URL.createObjectURL(file),
+          progress: 0,
+          status: "pending",
+        }));
 
         // Auto-process each newly added file immediately — no manual "Process" click.
         accepted.forEach((file, i) => {
@@ -78,6 +85,29 @@ export default function Upload() {
     },
     [runOne, setBatchResults]
   );
+
+  const removeItem = (idx: number) => {
+    setQueue((q) => {
+      const item = q[idx];
+      if (item) URL.revokeObjectURL(item.previewUrl);
+      return q.filter((_, i) => i !== idx);
+    });
+  };
+
+  const downloadOne = async (idx: number) => {
+    const item = queue[idx];
+    if (!item?.result) return;
+    setDownloadingIdx(idx);
+    try {
+      const hiRes = await upscaleDataUrlTo4K(item.result.dehazedDataUrl);
+      const a = document.createElement("a");
+      a.href = hiRes;
+      a.download = `dehazed-4k-${item.result.filename.replace(/\.[^.]+$/, "")}.png`;
+      a.click();
+    } finally {
+      setDownloadingIdx(null);
+    }
+  };
 
   const allDone = queue.length > 0 && queue.every((it) => it.status === "done" || it.status === "error");
   const anyDone = queue.some((it) => it.status === "done");
@@ -113,7 +143,7 @@ export default function Upload() {
             setDragOver(false);
             if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
           }}
-          className={`rounded-2xl border-2 border-dashed transition-colors bg-ink-900/50 flex flex-col items-center justify-center text-center py-20 px-6 ${
+          className={`rounded-2xl border-2 border-dashed transition-colors bg-ink-900/50 flex flex-col items-center justify-center text-center py-16 px-6 ${
             dragOver ? "border-crystal-400 bg-crystal-500/[0.06]" : "border-ink-600"
           }`}
         >
@@ -144,69 +174,127 @@ export default function Upload() {
           </motion.div>
         )}
 
-        <div className="mt-8">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold text-white">Queue</div>
-            {anyDone && (
-              <button
-                onClick={() => navigate("/results")}
-                className="focus-ring inline-flex items-center gap-1.5 text-xs font-semibold text-crystal-400 border border-crystal-500/30 rounded-lg px-3 py-1.5 hover:bg-crystal-500/10"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                View results
-              </button>
-            )}
-          </div>
-          <div className="space-y-3">
-            <AnimatePresence>
-              {queue.map((item, idx) => (
-                <motion.div
-                  key={item.file.name + idx}
-                  initial={{ opacity: 0, x: -12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 12 }}
-                  className="rounded-xl border border-ink-700 bg-ink-900/60 p-3 flex items-center gap-3"
+        {queue.length > 0 && (
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-semibold text-white">Queue</div>
+              {anyDone && (
+                <button
+                  onClick={() => navigate("/results")}
+                  className="focus-ring inline-flex items-center gap-1.5 text-xs font-semibold text-crystal-400 border border-crystal-500/30 rounded-lg px-3 py-1.5 hover:bg-crystal-500/10"
                 >
-                  <div className="w-11 h-11 rounded-lg bg-ink-800 flex items-center justify-center shrink-0">
-                    <FileImage className="w-5 h-5 text-mist-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs sm:text-sm truncate text-mist-200">
-                        {item.file.name} ({(item.file.size / (1024 * 1024)).toFixed(1)}MB) -{" "}
-                        <span className="capitalize text-mist-400">{item.status}</span>
-                      </span>
-                      <span className="text-xs text-crystal-400 shrink-0">{item.progress}%</span>
-                    </div>
-                    <div className="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
-                      <motion.div
-                        className="h-full bg-crystal-500"
-                        animate={{ width: `${item.progress}%` }}
-                        transition={{ ease: "easeOut", duration: 0.3 }}
-                      />
-                    </div>
-                    {item.status === "error" && item.errorMessage && (
-                      <div className="mt-1 text-[11px] text-red-400">{item.errorMessage}</div>
-                    )}
-                  </div>
-                  {(item.status === "pending" || item.status === "error") && (
-                    <button
-                      onClick={() => setQueue((q) => q.filter((_, i) => i !== idx))}
-                      className="shrink-0 focus-ring text-mist-400 hover:text-mist-200"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </motion.div>
-              ))}
-            </AnimatePresence>
-            {queue.length === 0 && (
-              <div className="text-xs text-mist-400/70">No files queued yet — add a hazy image above, it starts processing right away.</div>
-            )}
-          </div>
-        </div>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  View all in Results
+                </button>
+              )}
+            </div>
 
-        {allDone && (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <AnimatePresence>
+                {queue.map((item, idx) => {
+                  const isProcessing = item.status === "uploading" || item.status === "processing";
+                  return (
+                    <motion.div
+                      key={item.file.name + idx}
+                      layout
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.96 }}
+                      className="rounded-xl border border-ink-700 bg-ink-900/60 overflow-hidden"
+                    >
+                      <div className="relative aspect-square bg-ink-800">
+                        {/* Crossfade: hazy preview underneath, dehazed image fades in on top once done */}
+                        <img
+                          src={item.previewUrl}
+                          alt={item.file.name}
+                          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
+                            item.status === "done" ? "opacity-0" : "opacity-100"
+                          }`}
+                        />
+                        {item.result && (
+                          <img
+                            src={item.result.dehazedDataUrl}
+                            alt={`${item.file.name} dehazed`}
+                            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
+                              item.status === "done" ? "opacity-100" : "opacity-0"
+                            }`}
+                          />
+                        )}
+
+                        {isProcessing && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ink-950/55 backdrop-blur-[1px]">
+                            <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
+                              <circle cx="28" cy="28" r="24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="4" />
+                              <circle
+                                cx="28"
+                                cy="28"
+                                r="24"
+                                fill="none"
+                                stroke="#5EEAD4"
+                                strokeWidth="4"
+                                strokeLinecap="round"
+                                strokeDasharray={2 * Math.PI * 24}
+                                strokeDashoffset={2 * Math.PI * 24 * (1 - item.progress / 100)}
+                                style={{ transition: "stroke-dashoffset 0.15s linear" }}
+                              />
+                            </svg>
+                            <span className="absolute text-sm font-semibold text-white">{item.progress}%</span>
+                            <span className="mt-9 text-[10px] uppercase tracking-wider text-crystal-300">
+                              Dehazing…
+                            </span>
+                          </div>
+                        )}
+
+                        {item.status === "done" && (
+                          <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full bg-crystal-500/90 text-ink-950 text-[10px] font-semibold px-2 py-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Done
+                          </span>
+                        )}
+
+                        {(item.status === "pending" || item.status === "error") && (
+                          <button
+                            onClick={() => removeItem(idx)}
+                            className="absolute top-2 right-2 shrink-0 focus-ring rounded-full bg-ink-950/70 p-1.5 text-mist-300 hover:text-white"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="p-3">
+                        <div className="text-xs text-mist-200 truncate">{item.file.name}</div>
+                        <div className="mt-0.5 text-[11px] text-mist-400 capitalize">
+                          {(item.file.size / (1024 * 1024)).toFixed(2)}MB ·{" "}
+                          {item.status === "processing" ? "Dehazing" : item.status}
+                        </div>
+                        {item.status === "error" && item.errorMessage && (
+                          <div className="mt-1 text-[11px] text-red-400">{item.errorMessage}</div>
+                        )}
+                        {item.status === "done" && (
+                          <button
+                            onClick={() => downloadOne(idx)}
+                            disabled={downloadingIdx === idx}
+                            className="mt-2 w-full focus-ring inline-flex items-center justify-center gap-1.5 rounded-lg bg-crystal-500 text-ink-950 text-xs font-semibold px-3 py-2 hover:bg-crystal-400 transition-colors disabled:opacity-60"
+                          >
+                            {downloadingIdx === idx ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Download className="w-3.5 h-3.5" />
+                            )}
+                            Download (4K)
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {allDone && queue.length > 1 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-6">
             <button
               onClick={() => navigate("/results")}

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
-import { Volume2 } from "lucide-react";
 
 const SESSION_KEY = "hazentra_intro_played";
 // Safety net: if the video can't play for any reason (autoplay blocked,
@@ -15,7 +14,7 @@ const FADE_DURATION_S = 0.6;
 
 export default function IntroLoader({ onDone }: { onDone: () => void }) {
   const [mounted, setMounted] = useState(true);
-  const [showUnmuteHint, setShowUnmuteHint] = useState(false);
+  const [muted, setMuted] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -58,21 +57,41 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
       }
     };
 
+    // Browsers block autoplay-with-audio until the user has interacted with
+    // the page at least once — this is a hard browser policy, not something
+    // any code trick can bypass. Rather than surfacing a separate "tap for
+    // sound" button (which itself needs a tap to appear pointless), we make
+    // the *first click/tap/keypress anywhere on the page* — not just this
+    // overlay — immediately unmute the still-playing video in place. That
+    // covers the common case (someone clicks around the page) without
+    // asking for a dedicated interaction just to hear it.
+    const unmuteOnFirstGesture = () => {
+      if (video && video.muted) {
+        video.muted = false;
+        setMuted(false);
+      }
+      window.removeEventListener("pointerdown", unmuteOnFirstGesture);
+      window.removeEventListener("keydown", unmuteOnFirstGesture);
+    };
+
     if (video) {
       video.addEventListener("timeupdate", handleTimeUpdate);
       // Still listen for "ended" as a safety net — e.g. if the video is
       // shorter than FADE_DURATION_S or timeupdate fires too sparsely.
       video.addEventListener("ended", finish);
 
-      // Try with sound first. Most browsers block autoplay-with-audio on a
-      // user's very first visit — if that happens, fall back to a muted
-      // autoplay (which is always allowed) and surface a small tap-to-unmute
-      // affordance instead of silently failing or blocking the intro.
+      // Try with sound first — if the browser already trusts this site
+      // (returning visitor, high engagement) this just works with no
+      // interaction needed at all.
       video.muted = false;
       video.play().catch(() => {
+        // Blocked: fall back to muted autoplay (always allowed) and wait
+        // for the first real interaction to unmute automatically.
         video.muted = true;
-        setShowUnmuteHint(true);
+        setMuted(true);
         video.play().catch(finish);
+        window.addEventListener("pointerdown", unmuteOnFirstGesture);
+        window.addEventListener("keydown", unmuteOnFirstGesture);
       });
     }
 
@@ -80,6 +99,8 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
       clearTimeout(fallback);
       video?.removeEventListener("timeupdate", handleTimeUpdate);
       video?.removeEventListener("ended", finish);
+      window.removeEventListener("pointerdown", unmuteOnFirstGesture);
+      window.removeEventListener("keydown", unmuteOnFirstGesture);
     };
   }, [onDone]);
 
@@ -99,23 +120,10 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
         autoPlay
         preload="auto"
       />
-
-      {showUnmuteHint && (
-        <button
-          onClick={(e) => {
-            const video = videoRef.current;
-            if (video) {
-              video.muted = false;
-              video.play().catch(() => {});
-            }
-            setShowUnmuteHint(false);
-            e.stopPropagation();
-          }}
-          className="absolute bottom-6 right-6 flex items-center gap-2 rounded-full bg-ink-900/80 border border-ink-600 px-4 py-2 text-xs font-medium text-mist-200 backdrop-blur hover:bg-ink-800 transition-colors"
-        >
-          <Volume2 className="w-3.5 h-3.5" />
-          Tap for sound
-        </button>
+      {muted && (
+        <span className="absolute bottom-6 right-6 text-[11px] text-mist-400/70">
+          Click anywhere for sound
+        </span>
       )}
     </div>
   );
