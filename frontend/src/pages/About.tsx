@@ -12,10 +12,30 @@ export default function About() {
       >
         <h1 className="font-display text-xl font-semibold text-white mb-3">About Hazentra</h1>
         <p className="text-sm text-mist-400 leading-relaxed">
-          Hazentra removes atmospheric haze from photographs using a Searchable Vision Transformer
-          that predicts a per-patch scattering coefficient (beta), refines it against a Neural
-          Architecture Search codebook built from clustered prototypes, and reconstructs the clean
-          scene using dark-channel atmospheric light estimation and the physical haze formation model.
+          <p>Hazentra is a simple tool that removes haze from photos, bringing back the clear details, natural colors, and sharp view that may be hidden behind fog, mist, or pollution.</p>
+          <br></br>
+          <p>Have you ever taken a photo of a beautiful landscape, a mountain, a road, or a city skyline, only to find that it looks dull, faded, or blurry because of the weather? Even though your eyes could see more clearly, the camera may have captured a layer of haze that hides important details. Hazentra was created to solve this problem by helping people recover the clear image they expected to see. Instead of letting haze reduce the quality of a photo, Hazentra reveals what is already there, making images look brighter, cleaner, and easier to understand.</p>
+          <br></br>
+          <u>How Hazentra Works</u>
+
+<p>1. Upload Your Photo</p>
+<p>Upload a photo that appears hazy, foggy, or unclear to Hazentra.</p>
+<br></br>
+<p>2. Analyze the Image</p>
+<p>Hazentra carefully examines every part of the image to understand where the haze is light and where it is more noticeable.</p>
+<br></br>
+<p>3. Find Hidden Details</p>
+<p>It identifies areas where the view has become faded and uses the surrounding clear parts of the image to understand what should be restored.</p>
+<br></br>
+<p>4. Remove the Haze</p>
+<p>Hazentra gently removes the haze while protecting the natural appearance of the photo, ensuring that important details are not lost.</p>
+<br></br>
+<p>5. Restore Natural Quality</p>
+<p>Instead of simply increasing brightness or adding extra color, Hazentra improves clarity while keeping colors, lighting, and textures balanced and realistic.</p>
+<br></br>
+<p>6. Get a Clear Image</p>
+<p>Within moments, you receive a sharper, cleaner, and more vibrant image that closely reflects the original scene, making it easier to view, share, or use.</p>
+<br></br>
         </p>
         <div className="mt-6 space-y-2 text-sm text-mist-400">
           <div>Encoder: ViT-Small/16, 384-dim patch tokens</div>

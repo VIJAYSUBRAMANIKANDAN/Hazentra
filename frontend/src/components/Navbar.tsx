@@ -21,11 +21,9 @@ export default function Navbar() {
           <img
             src="/hazentra-mark.png"
             alt="Hazentra"
-            className="h-8 w-auto group-hover:brightness-125 transition-all"
+            className="h-24 w-auto group-hover:brightness-125 transition-all"
           />
-          <span className="font-display font-semibold tracking-tight text-[15px] sm:text-base text-mist-200">
-            HAZENTRA
-          </span>
+          
         </NavLink>
 
         <nav className="hidden md:flex items-center gap-1">

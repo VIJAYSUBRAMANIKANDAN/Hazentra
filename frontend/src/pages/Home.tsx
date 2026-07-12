@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { Sparkles, ArrowRight, ScanEye, Layers, Wand2 } from "lucide-react";
+import { Sparkles, ArrowRight, ScanEye, Layers, Wand2, } from "lucide-react";
+
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -58,10 +59,6 @@ export default function Home() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-crystal-500/25 bg-crystal-500/10 text-crystal-400 text-xs font-medium mb-6">
-            <Sparkles className="w-3.5 h-3.5" />
-            AI-Powered Dehazing
-          </div>
           <h1 className="font-display text-4xl sm:text-5xl font-bold tracking-tight text-white leading-[1.1]">
             See through the haze,
             <br />

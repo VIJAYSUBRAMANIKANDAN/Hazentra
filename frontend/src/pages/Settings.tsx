@@ -41,17 +41,11 @@ export default function Settings() {
           </Row>
         </Section>
 
-        <Section title="Connection" delay={0.08}>
-          <Row label="Model API">
-            <span className="text-xs text-mist-400 break-all text-right">{getApiBase()}</span>
-          </Row>
-        </Section>
-
         <Section title="Application Info" delay={0.16}>
           <div className="text-sm text-mist-400 leading-relaxed">
             Hazentra v1.0
             <br />
-            Developed by Clarity Research Lab
+            Developed by R Vijay Subramanikandan
           </div>
         </Section>
       </div>
