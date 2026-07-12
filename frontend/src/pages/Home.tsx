@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { Sparkles, ArrowRight, ScanEye, Layers, Wand2, } from "lucide-react";
+import { ArrowRight, ScanEye, Layers, Wand2, } from "lucide-react";
 
 
 gsap.registerPlugin(ScrollTrigger);

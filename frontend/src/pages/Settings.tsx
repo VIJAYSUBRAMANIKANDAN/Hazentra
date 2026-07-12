@@ -1,7 +1,6 @@
 import { motion } from "framer-motion";
 import Sidebar from "../components/Sidebar";
 import { useAppStore } from "../lib/store";
-import { getApiBase } from "../lib/api";
 
 export default function Settings() {
   const outputFormat = useAppStore((s) => s.outputFormat);
