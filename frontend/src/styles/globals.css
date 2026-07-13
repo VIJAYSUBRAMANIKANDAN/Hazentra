@@ -19,6 +19,7 @@ body,
 #root {
   background-color: #070b10;
   color: #cbd5e1;
+  overflow-x: hidden;
 }
 
 * {

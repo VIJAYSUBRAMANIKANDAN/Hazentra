@@ -9,7 +9,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen flex flex-col bg-ink-950 text-mist-200 relative overflow-x-hidden">
+    <div className="min-h-screen flex flex-col bg-ink-950 text-mist-200 relative">
       <HazeField />
       <Navbar />
       <main className="flex-1 relative z-10">
