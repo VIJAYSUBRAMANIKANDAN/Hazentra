@@ -276,9 +276,9 @@ export default function Upload() {
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.96 }}
-                      className="rounded-xl border border-ink-700 bg-ink-900/60 overflow-hidden"
+                      className="rounded-xl border border-ink-700 bg-ink-900/60"
                     >
-                      <div className="relative aspect-square bg-ink-800">
+                      <div className="relative aspect-square bg-ink-800 rounded-t-xl overflow-hidden">
                         {/* Crossfade: hazy preview underneath, dehazed image fades in on top once done */}
                         <img
                           src={item.previewUrl}
