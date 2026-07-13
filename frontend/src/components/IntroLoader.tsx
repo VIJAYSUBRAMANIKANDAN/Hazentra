@@ -2,9 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 
 const SESSION_KEY = "hazentra_intro_played";
-// Safety net: if the video can't play for any reason (autoplay blocked,
-// slow connection, codec issue), never trap the user on the intro screen.
-const FALLBACK_TIMEOUT_MS = 8000;
+// Absolute last resort if nothing else fires — kept short so a failure
+// never leaves someone staring at a frozen screen for long.
+const FALLBACK_TIMEOUT_MS = 5000;
+// Some browsers/devices (Data Saver mode on budget Android phones, certain
+// in-app webviews, decode failures) silently never actually start playing
+// even a muted, autoplay-attributed video — play() resolves but the video
+// stays paused at currentTime 0 forever. Checking shortly after play()
+// resolves and bailing out fast (instead of waiting the full fallback)
+// keeps the intro from ever feeling "stuck" on constrained devices.
+const PLAYBACK_START_CHECK_MS = 1800;
 // How long the overlay takes to fade out. We start this fade while the
 // video is still playing its final moments (see handleTimeUpdate below),
 // rather than waiting for "ended" — otherwise the video freezes on its
@@ -56,6 +63,7 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
     const fallback = setTimeout(finish, FALLBACK_TIMEOUT_MS);
     const video = videoRef.current;
     let fadeStarted = false;
+    let startCheckTimer: ReturnType<typeof setTimeout> | undefined;
 
     // Kick off the fade a little before the video actually ends, so the
     // overlay is blending out while the last frames are still playing
@@ -90,6 +98,10 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
       // Still listen for "ended" as a safety net — e.g. if the video is
       // shorter than FADE_DURATION_S or timeupdate fires too sparsely.
       video.addEventListener("ended", finish);
+      // A hard load/decode failure (bad network, unsupported profile on an
+      // old device, wrong path) fires "error", not a rejected play() —
+      // bail out immediately rather than waiting for any timeout.
+      video.addEventListener("error", finish);
 
       // Mobile browsers (iOS Safari, Chrome/Android) block *any* autoplay
       // that isn't muted — with no exceptions, unlike desktop where a
@@ -103,14 +115,28 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
       video.muted = true;
       setMuted(true);
       video.play().catch(finish);
+
+      // Belt-and-braces: some devices (Data Saver mode, certain in-app
+      // browsers, restrictive battery-saver settings) resolve play()
+      // successfully but the video never actually advances past frame
+      // zero. Check shortly after and bail out fast rather than waiting
+      // the full fallback timeout.
+      startCheckTimer = setTimeout(() => {
+        if (!finished && video.paused && video.currentTime === 0) {
+          finish();
+        }
+      }, PLAYBACK_START_CHECK_MS);
+
       window.addEventListener("pointerdown", unmuteOnFirstGesture);
       window.addEventListener("keydown", unmuteOnFirstGesture);
     }
 
     return () => {
       clearTimeout(fallback);
+      if (startCheckTimer) clearTimeout(startCheckTimer);
       video?.removeEventListener("timeupdate", handleTimeUpdate);
       video?.removeEventListener("ended", finish);
+      video?.removeEventListener("error", finish);
       window.removeEventListener("pointerdown", unmuteOnFirstGesture);
       window.removeEventListener("keydown", unmuteOnFirstGesture);
     };

@@ -45,9 +45,15 @@ export default function Upload() {
   const addFiles = useCallback(
     (files: FileList | File[]) => {
       setError(null);
-      const incoming = Array.from(files).filter((f) => ACCEPTED.includes(f.type));
+      const all = Array.from(files);
+      const incoming = all.filter((f) => ACCEPTED.includes(f.type));
       if (incoming.length === 0) {
-        setError("Please choose a JPG or PNG image.");
+        const hasHeic = all.some((f) => /heic|heif/i.test(f.type) || /\.heic$|\.heif$/i.test(f.name));
+        setError(
+          hasHeic
+            ? "That looks like a HEIC/HEIF photo (common on iPhone). Please choose a JPG or PNG instead — in the Photos app, use Share → Save as JPG, or check your camera's format setting."
+            : "Please choose a JPG or PNG image."
+        );
         return;
       }
 
@@ -163,8 +169,19 @@ export default function Upload() {
             type="file"
             accept="image/jpeg,image/png"
             multiple
-            className="hidden"
-            onChange={(e) => e.target.files && addFiles(e.target.files)}
+            // Deliberately NOT display:none (Tailwind's `hidden`). Several
+            // mobile browsers (Samsung Internet, older Android WebView,
+            // in-app browsers) silently refuse a synthetic .click() on a
+            // display:none file input as a security precaution — it has to
+            // stay a real, laid-out (if invisible) element for the native
+            // picker to open reliably everywhere.
+            className="absolute w-px h-px opacity-0 overflow-hidden pointer-events-none"
+            tabIndex={-1}
+            onChange={(e) => {
+              if (e.target.files) addFiles(e.target.files);
+              // reset so selecting the exact same file again still fires onChange
+              e.target.value = "";
+            }}
           />
         </motion.div>
 
