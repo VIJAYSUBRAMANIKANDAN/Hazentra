@@ -56,7 +56,26 @@ export function dehazeImage(
     return await new Promise<DehazeResult>((resolve, reject) => {
       eventSource = new EventSource(`${API_BASE}/api/dehaze/jobs/${jobId}/stream`);
 
+      // The browser's EventSource already auto-reconnects on its own after a
+      // transient network blip — closing/rejecting on the first "error"
+      // event turns a brief hiccup (common when several jobs' connections
+      // are competing for the browser's per-origin connection limit) into a
+      // permanent failure. Instead we only give up if we genuinely hear
+      // nothing at all for STALL_TIMEOUT_MS, which is a real dead
+      // connection rather than a momentary retry.
+      const STALL_TIMEOUT_MS = 45_000;
+      let stallTimer: ReturnType<typeof setTimeout>;
+      const resetStallTimer = () => {
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => {
+          eventSource?.close();
+          reject(new Error("Lost connection to the dehazing server."));
+        }, STALL_TIMEOUT_MS);
+      };
+      resetStallTimer();
+
       eventSource.onmessage = (msg) => {
+        resetStallTimer();
         const data = JSON.parse(msg.data) as {
           status: DehazeProgressEvent["status"];
           progress: number;
@@ -66,6 +85,7 @@ export function dehazeImage(
         };
 
         if (data.status === "error") {
+          clearTimeout(stallTimer);
           eventSource?.close();
           reject(new Error(data.error || "Dehazing failed"));
           return;
@@ -74,6 +94,7 @@ export function dehazeImage(
         onProgress?.({ status: data.status, progress: data.progress, stage: data.stage });
 
         if (data.status === "done" && data.result) {
+          clearTimeout(stallTimer);
           eventSource?.close();
           const r = data.result as {
             id: string;
@@ -108,9 +129,13 @@ export function dehazeImage(
         }
       };
 
+      // Just log-worthy transient errors pass through silently — the browser
+      // retries the connection itself. We don't reject here at all; the
+      // stall timer above is the only thing that gives up.
       eventSource.onerror = () => {
-        eventSource?.close();
-        reject(new Error("Lost connection to the dehazing server."));
+        if (cancelled) {
+          eventSource?.close();
+        }
       };
     });
   })();

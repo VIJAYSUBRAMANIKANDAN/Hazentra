@@ -1,16 +1,23 @@
 import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, X, CheckCircle2, Download, Loader2 } from "lucide-react";
+import { UploadCloud, X, CheckCircle2 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import DehazeLoader from "../components/DehazeLoader";
+import QualityMenu from "../components/QualityMenu";
 import { useAppStore } from "../lib/store";
 import { dehazeImage, type DehazeJobHandle } from "../lib/api";
-import { upscaleDataUrlTo4K } from "../lib/upscale";
+import { exportAtQuality, type QualityPreset } from "../lib/upscale";
 import type { QueueItem } from "../lib/types";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/jpg"];
 const MAX_IMAGES = 10;
+// Browsers cap concurrent connections per site at 6, and the backend is
+// running actual model inference for each job on shared CPU — firing all 10
+// at once starves both. Running a small batch at a time and queueing the
+// rest keeps every job's connection healthy and finishes the whole set
+// faster overall than contending for resources all at once.
+const MAX_CONCURRENT = 3;
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -22,6 +29,21 @@ export default function Upload() {
   const setBatchResults = useAppStore((s) => s.setBatchResults);
   const addBatchResult = useAppStore((s) => s.addBatchResult);
   const jobHandles = useRef<Map<number, DehazeJobHandle>>(new Map());
+  const pendingIndices = useRef<number[]>([]);
+  const activeCount = useRef(0);
+  const filesByIndex = useRef<Map<number, File>>(new Map());
+
+  const startNextInQueue = useCallback(() => {
+    while (activeCount.current < MAX_CONCURRENT && pendingIndices.current.length > 0) {
+      const idx = pendingIndices.current.shift()!;
+      const file = filesByIndex.current.get(idx);
+      if (!file) continue;
+      activeCount.current += 1;
+      void runOneRef.current(file, idx);
+    }
+  }, []);
+
+  const runOneRef = useRef<(file: File, idx: number) => Promise<void>>(async () => {});
 
   const runOne = useCallback(
     async (file: File, idx: number) => {
@@ -49,10 +71,13 @@ export default function Upload() {
         setError(e instanceof Error ? e.message : "Processing failed.");
       } finally {
         jobHandles.current.delete(idx);
+        activeCount.current -= 1;
+        startNextInQueue();
       }
     },
-    [addBatchResult]
+    [addBatchResult, startNextInQueue]
   );
+  runOneRef.current = runOne;
 
   const addFiles = useCallback(
     (files: FileList | File[]) => {
@@ -94,20 +119,26 @@ export default function Upload() {
           status: "pending",
         }));
 
-        // Auto-process each newly added file immediately — no manual "Process" click.
+        // Queue each newly added file — startNextInQueue() only lets
+        // MAX_CONCURRENT run at once, queueing the rest automatically.
         accepted.forEach((file, i) => {
-          void runOne(file, startIndex + i);
+          const idx = startIndex + i;
+          filesByIndex.current.set(idx, file);
+          pendingIndices.current.push(idx);
         });
+        startNextInQueue();
 
         return [...current, ...newItems];
       });
     },
-    [runOne, setBatchResults]
+    [startNextInQueue, setBatchResults]
   );
 
   const removeItem = (idx: number) => {
     jobHandles.current.get(idx)?.cancel();
     jobHandles.current.delete(idx);
+    pendingIndices.current = pendingIndices.current.filter((i) => i !== idx);
+    filesByIndex.current.delete(idx);
     setQueue((q) => {
       const item = q[idx];
       if (item) URL.revokeObjectURL(item.previewUrl);
@@ -115,15 +146,15 @@ export default function Upload() {
     });
   };
 
-  const downloadOne = async (idx: number) => {
+  const downloadOne = async (idx: number, preset: QualityPreset) => {
     const item = queue[idx];
     if (!item?.result) return;
     setDownloadingIdx(idx);
     try {
-      const hiRes = await upscaleDataUrlTo4K(item.result.dehazedDataUrl);
+      const exported = await exportAtQuality(item.result.dehazedDataUrl, preset);
       const a = document.createElement("a");
-      a.href = hiRes;
-      a.download = `dehazed-4k-${item.result.filename.replace(/\.[^.]+$/, "")}.png`;
+      a.href = exported;
+      a.download = `dehazed-${preset}-${item.result.filename.replace(/\.[^.]+$/, "")}.png`;
       a.click();
     } finally {
       setDownloadingIdx(null);
@@ -283,18 +314,11 @@ export default function Upload() {
                           <div className="mt-1 text-[11px] text-red-400">{item.errorMessage}</div>
                         )}
                         {item.status === "done" && (
-                          <button
-                            onClick={() => downloadOne(idx)}
-                            disabled={downloadingIdx === idx}
-                            className="mt-2 w-full focus-ring inline-flex items-center justify-center gap-1.5 rounded-lg bg-crystal-500 text-ink-950 text-xs font-semibold px-3 py-2 hover:bg-crystal-400 transition-colors disabled:opacity-60"
-                          >
-                            {downloadingIdx === idx ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Download className="w-3.5 h-3.5" />
-                            )}
-                            Download (4K)
-                          </button>
+                          <QualityMenu
+                            busy={downloadingIdx === idx}
+                            onSelect={(preset) => downloadOne(idx, preset)}
+                            className="mt-2"
+                          />
                         )}
                       </div>
                     </motion.div>

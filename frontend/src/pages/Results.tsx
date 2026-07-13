@@ -2,10 +2,10 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import JSZip from "jszip";
-import { Download, Loader2 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
+import QualityMenu from "../components/QualityMenu";
 import { useAppStore } from "../lib/store";
-import { upscaleDataUrlTo4K, dataUrlToBlob } from "../lib/upscale";
+import { exportAtQuality, dataUrlToBlob, type QualityPreset } from "../lib/upscale";
 import type { DehazeResult } from "../lib/types";
 
 export default function Results() {
@@ -34,16 +34,16 @@ export default function Results() {
     );
   }
 
-  async function downloadSingle(result: DehazeResult) {
+  async function downloadSingle(result: DehazeResult, preset: QualityPreset) {
     setDownloadingId(result.id);
     setDownloadError(null);
     try {
-      const hiRes = await upscaleDataUrlTo4K(result.dehazedDataUrl);
-      const blob = dataUrlToBlob(hiRes);
+      const exported = await exportAtQuality(result.dehazedDataUrl, preset);
+      const blob = dataUrlToBlob(exported);
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = `dehazed-4k-${result.filename.replace(/\.[^.]+$/, "")}.png`;
+      a.download = `dehazed-${preset}-${result.filename.replace(/\.[^.]+$/, "")}.png`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -58,21 +58,21 @@ export default function Results() {
     }
   }
 
-  async function downloadAll() {
+  async function downloadAll(preset: QualityPreset) {
     setZipping(true);
     setDownloadError(null);
     try {
       const zip = new JSZip();
       for (const result of results) {
-        const hiRes = await upscaleDataUrlTo4K(result.dehazedDataUrl);
-        const blob = dataUrlToBlob(hiRes);
-        zip.file(`dehazed-4k-${result.filename.replace(/\.[^.]+$/, "")}.png`, blob);
+        const exported = await exportAtQuality(result.dehazedDataUrl, preset);
+        const blob = dataUrlToBlob(exported);
+        zip.file(`dehazed-${preset}-${result.filename.replace(/\.[^.]+$/, "")}.png`, blob);
       }
       const zipBlob = await zip.generateAsync({ type: "blob" });
       const objectUrl = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = "hazentra-dehazed-images.zip";
+      a.download = `hazentra-dehazed-${preset}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -98,14 +98,7 @@ export default function Results() {
           </motion.h1>
           <div className="flex gap-2">
             {results.length > 1 && (
-              <button
-                onClick={downloadAll}
-                disabled={zipping}
-                className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-crystal-500 text-ink-950 text-xs sm:text-sm font-semibold px-4 py-2 hover:bg-crystal-400 transition-colors disabled:opacity-60"
-              >
-                {zipping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                Download all (4K)
-              </button>
+              <QualityMenu label="Download all" busy={zipping} onSelect={downloadAll} />
             )}
             <Link
               to="/upload"
@@ -132,18 +125,11 @@ export default function Results() {
               <div className="flex items-center justify-between mb-4">
                 <span className="text-sm font-semibold text-white truncate">{result.filename}</span>
                 {results.length === 1 && (
-                  <button
-                    onClick={() => downloadSingle(result)}
-                    disabled={downloadingId === result.id}
-                    className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-crystal-500 text-ink-950 text-xs font-semibold px-4 py-2 hover:bg-crystal-400 transition-colors disabled:opacity-60"
-                  >
-                    {downloadingId === result.id ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Download className="w-3.5 h-3.5" />
-                    )}
-                    Download dehazed (4K)
-                  </button>
+                  <QualityMenu
+                    label="Download dehazed"
+                    busy={downloadingId === result.id}
+                    onSelect={(preset) => downloadSingle(result, preset)}
+                  />
                 )}
               </div>
 
@@ -154,18 +140,11 @@ export default function Results() {
 
               {results.length > 1 && (
                 <div className="mt-3 flex justify-end">
-                  <button
-                    onClick={() => downloadSingle(result)}
-                    disabled={downloadingId === result.id}
-                    className="focus-ring inline-flex items-center gap-1.5 text-xs font-semibold text-crystal-400 border border-crystal-500/30 rounded-lg px-3 py-1.5 hover:bg-crystal-500/10 disabled:opacity-60"
-                  >
-                    {downloadingId === result.id ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Download className="w-3.5 h-3.5" />
-                    )}
-                    Download this one (4K)
-                  </button>
+                  <QualityMenu
+                    label="Download this one"
+                    busy={downloadingId === result.id}
+                    onSelect={(preset) => downloadSingle(result, preset)}
+                  />
                 </div>
               )}
 
@@ -191,7 +170,7 @@ export default function Results() {
           <p className="mt-6 text-[11px] text-mist-400/70 leading-relaxed max-w-2xl">
             PSNR / SSIM / MAE / RMSE are the model&apos;s averaged benchmark scores on the held-out validation
             set — there is no ground-truth clean image for your uploaded photos to compute these live against.
-            Downloaded images are upscaled to 4K (3840px) resolution for crisp, print-ready output.
+            Downloads are exported at exactly the resolution you choose — from 360p up to full 4K.
           </p>
         )}
       </div>

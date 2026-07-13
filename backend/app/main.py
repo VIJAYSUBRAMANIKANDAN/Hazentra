@@ -31,7 +31,7 @@ ALLOWED_ORIGINS = os.getenv(
     "http://localhost:3000,https://hazentra.vercel.app"
 ).split(",")
 
-MAX_UPLOAD_MB = float(os.environ.get("MAX_UPLOAD_MB", "15"))
+MAX_UPLOAD_MB = float(os.environ.get("MAX_UPLOAD_MB", "200"))
 # How long a finished/errored job's result stays in memory waiting to be
 # streamed/fetched before we garbage-collect it.
 JOB_TTL_SECONDS = 600
