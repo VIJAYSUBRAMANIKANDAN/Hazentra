@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { Download, Loader2, ChevronDown } from "lucide-react";
 import { QUALITY_PRESETS, type QualityPreset } from "../lib/upscale";
 
@@ -27,49 +27,37 @@ export default function QualityMenu({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
-  useEffect(() => {
+  // Runs after the dropdown has actually been painted, so we're measuring
+  // its real, current position — not a guessed/hardcoded height. This is
+  // what makes it work correctly no matter where the card sits on the page,
+  // how many images are queued, or what viewport size it's running at.
+  useLayoutEffect(() => {
     if (!open) return;
 
-    // The trigger button keeps browser focus after being clicked, and on
-    // several mobile browsers a focused element that's near the bottom of
-    // the viewport triggers the browser's OWN automatic "scroll focused
-    // element into view" behavior. That happens independently of anything
-    // we do, and then fights whatever scroll we might add on top of it —
-    // which is exactly the "two scrolls happening" you saw. Removing focus
-    // from the trigger button immediately stops the browser from doing
-    // that, leaving room for a single, deliberate scroll that we control.
+    // The trigger button keeps browser focus after being clicked. On some
+    // browsers a focused element near the bottom of the viewport triggers
+    // the browser's OWN automatic "scroll focused element into view"
+    // behavior, independent of anything we do — that competing, uncontrolled
+    // scroll is what caused two scroll motions to happen at once. Dropping
+    // focus immediately removes that, leaving exactly one scroll in our
+    // control below.
     buttonRef.current?.blur();
 
-    // Wait one frame so the dropdown has actually been laid out (its real
-    // height only exists after this render commits), then check whether
-    // its lower edge is clipped by the viewport — and if so, perform the
-    // one and only scroll needed to reveal it fully.
-    const raf = requestAnimationFrame(() => {
-      const panel = panelRef.current;
-      if (!panel) return;
-      const rect = panel.getBoundingClientRect();
-      const viewportBottom = window.innerHeight;
-      const overflowBottom = rect.bottom - viewportBottom;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    const isClipped = rect.bottom > window.innerHeight;
 
-      if (overflowBottom > 0) {
-        // Scroll just enough to bring the full menu into view, plus a
-        // small breathing-room margin — not all the way to the bottom of
-        // the page, so the card itself stays in context on screen too.
-        const target = window.scrollY + overflowBottom + 16;
-        if (window.__lenis) {
-          // Desktop: Lenis owns scroll position internally via its own
-          // rAF loop — go through it so it doesn't override/fight a raw
-          // native scroll on the next frame.
-          window.__lenis.scrollTo(target, { duration: 0.6 });
-        } else {
-          // Mobile/touch: Lenis is intentionally disabled here, so native
-          // smooth scrolling is the correct (and only) mechanism at play.
-          window.scrollBy({ top: overflowBottom + 16, behavior: "smooth" });
-        }
-      }
-    });
-
-    return () => cancelAnimationFrame(raf);
+    if (isClipped) {
+      // The standard, browser-native way to bring an off-screen element
+      // into view — it works correctly regardless of page length, how
+      // many cards are above it, or viewport size, because the browser
+      // computes the scroll distance itself at the moment it's called.
+      // Lenis (when active, on desktop) listens for native scroll events
+      // and re-syncs its own internal position automatically, so this
+      // never fights or creates a second, separate scroll.
+      panel.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" });
+    }
   }, [open]);
 
   return (

@@ -1,17 +1,6 @@
 import { useEffect } from "react";
 import Lenis from "lenis";
 
-// Exposed so other components (e.g. the download quality menu) can route
-// programmatic scrolling through Lenis's own API when it's active, instead
-// of a raw window.scrollBy — Lenis tracks scroll position internally via
-// its own rAF loop, so a native scroll call can get fought/overridden on
-// the very next frame if it doesn't go through Lenis itself.
-declare global {
-  interface Window {
-    __lenis?: Lenis;
-  }
-}
-
 export function useLenis() {
   useEffect(() => {
     // Lenis re-implements scrolling in JS to get its custom easing on
@@ -31,7 +20,6 @@ export function useLenis() {
       easing: (t: number) => 1 - Math.pow(1 - t, 3),
       smoothWheel: true,
     });
-    window.__lenis = lenis;
 
     let rafId: number;
     function raf(time: number) {
@@ -43,7 +31,6 @@ export function useLenis() {
     return () => {
       cancelAnimationFrame(rafId);
       lenis.destroy();
-      window.__lenis = undefined;
     };
   }, []);
 }
