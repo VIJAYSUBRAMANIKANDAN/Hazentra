@@ -7,7 +7,7 @@ import DehazeLoader from "../components/DehazeLoader";
 import QualityMenu from "../components/QualityMenu";
 import { useAppStore } from "../lib/store";
 import { dehazeImage, type DehazeJobHandle } from "../lib/api";
-import { exportAtQuality, type QualityPreset } from "../lib/upscale";
+import { exportAtQuality, dataUrlToBlob, type QualityPreset } from "../lib/upscale";
 import type { QueueItem } from "../lib/types";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/jpg"];
@@ -152,10 +152,22 @@ export default function Upload() {
     setDownloadingIdx(idx);
     try {
       const exported = await exportAtQuality(item.result.dehazedDataUrl, preset);
+      const blob = dataUrlToBlob(exported);
+      const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = exported;
+      a.href = objectUrl;
       a.download = `dehazed-${preset}-${item.result.filename.replace(/\.[^.]+$/, "")}.png`;
+      // The anchor must actually be in the DOM for `.click()` to reliably
+      // trigger a download in every browser — Firefox in particular can
+      // silently no-op on a detached element. A raw base64 data: URI can
+      // also be tens of MB for a 4K export, which some browsers (especially
+      // mobile Safari) fail on silently — a Blob object URL avoids that too.
+      document.body.appendChild(a);
       a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't prepare the download — please try again.");
     } finally {
       setDownloadingIdx(null);
     }
