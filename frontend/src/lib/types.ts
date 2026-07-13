@@ -23,6 +23,7 @@ export interface QueueItem {
   file: File;
   previewUrl: string;
   progress: number;
+  stage: string;
   status: QueueStatus;
   result?: DehazeResult;
   errorMessage?: string;

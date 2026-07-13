@@ -8,91 +8,118 @@ export function getApiBase() {
   return API_BASE;
 }
 
-export type DehazeStage = "uploading" | "processing";
+export type DehazeProgressEvent = {
+  status: "queued" | "uploading" | "processing" | "done" | "error";
+  progress: number;
+  stage: string;
+};
 
-export async function dehazeImage(
+export type DehazeJobHandle = {
+  /** Resolves with the finished result, or rejects if the job errors. */
+  done: Promise<DehazeResult>;
+  /** Stops listening (e.g. if the user removes the item mid-processing). */
+  cancel: () => void;
+};
+
+/**
+ * Uploads the file, then opens a Server-Sent Events stream to the backend
+ * job and forwards every real progress checkpoint as it happens — these are
+ * not simulated ticks, each one corresponds to a pipeline stage the backend
+ * has actually finished (feature extraction, patch retrieval, refinement,
+ * transmission mapping, compositing, etc).
+ */
+export function dehazeImage(
   file: File,
-  onProgress?: (pct: number, stage: DehazeStage) => void
-): Promise<DehazeResult> {
-  const formData = new FormData();
-  formData.append("file", file);
+  onProgress?: (event: DehazeProgressEvent) => void
+): DehazeJobHandle {
+  let cancelled = false;
+  let eventSource: EventSource | null = null;
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_BASE}/api/dehaze`);
+  const done = (async () => {
+    // 1. Upload the file and get a job id back immediately.
+    const formData = new FormData();
+    formData.append("file", file);
+    onProgress?.({ status: "uploading", progress: 2, stage: "Uploading image" });
 
-    // The upload itself is usually near-instant for small images, so we only
-    // give it 0-30% of the bar. The remaining 30-95% is a simulated ramp that
-    // fills the time the backend actually spends running the model — without
-    // this, the bar hits 100% the moment the bytes are sent and then just
-    // sits frozen while the response is still pending, which looks stuck.
-    let simInterval: ReturnType<typeof setInterval> | null = null;
-    let simPct = 30;
+    const createRes = await fetch(`${API_BASE}/api/dehaze/jobs`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!createRes.ok) {
+      const detail = await createRes.text().catch(() => "");
+      throw new Error(`Upload failed: ${createRes.status} ${detail}`.trim());
+    }
+    const { job_id: jobId } = (await createRes.json()) as { job_id: string };
+    if (cancelled) throw new Error("cancelled");
 
-    const startSimulatedProgress = () => {
-      onProgress?.(simPct, "processing");
-      simInterval = setInterval(() => {
-        // Ease off as we approach the cap so it never falsely claims 100%
-        // before the response actually arrives.
-        const remaining = 95 - simPct;
-        simPct += Math.max(0.5, remaining * 0.08);
-        if (simPct >= 95) {
-          simPct = 95;
-          if (simInterval) clearInterval(simInterval);
+    // 2. Stream real progress from the backend until it's done or errors.
+    return await new Promise<DehazeResult>((resolve, reject) => {
+      eventSource = new EventSource(`${API_BASE}/api/dehaze/jobs/${jobId}/stream`);
+
+      eventSource.onmessage = (msg) => {
+        const data = JSON.parse(msg.data) as {
+          status: DehazeProgressEvent["status"];
+          progress: number;
+          stage: string;
+          result?: Record<string, unknown>;
+          error?: string;
+        };
+
+        if (data.status === "error") {
+          eventSource?.close();
+          reject(new Error(data.error || "Dehazing failed"));
+          return;
         }
-        onProgress?.(Math.round(simPct), "processing");
-      }, 150);
-    };
 
-    const stopSimulatedProgress = () => {
-      if (simInterval) clearInterval(simInterval);
-    };
+        onProgress?.({ status: data.status, progress: data.progress, stage: data.stage });
 
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) {
-        const uploadPct = Math.round((e.loaded / e.total) * 30);
-        onProgress(uploadPct, "uploading");
-      }
-    };
-
-    xhr.upload.onload = () => {
-      startSimulatedProgress();
-    };
-
-    xhr.onload = () => {
-      stopSimulatedProgress();
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          onProgress?.(100, "processing");
-          resolve({
-            id: data.id,
-            filename: file.name,
-            hazyDataUrl: data.hazy_image,
-            transmissionDataUrl: data.transmission_map,
-            dehazedDataUrl: data.dehazed_image,
+        if (data.status === "done" && data.result) {
+          eventSource?.close();
+          const r = data.result as {
+            id: string;
+            hazy_image: string;
+            transmission_map: string;
+            dehazed_image: string;
             metrics: {
-              psnr: data.metrics.psnr,
-              ssim: data.metrics.ssim,
-              mae: data.metrics.mae,
-              rmse: data.metrics.rmse,
-              processingTimeSeconds: data.metrics.processing_time_seconds,
+              psnr: number;
+              ssim: number;
+              mae: number;
+              rmse: number;
+              processing_time_seconds: number;
+            };
+            benchmarked?: boolean;
+          };
+          resolve({
+            id: r.id,
+            filename: file.name,
+            hazyDataUrl: r.hazy_image,
+            transmissionDataUrl: r.transmission_map,
+            dehazedDataUrl: r.dehazed_image,
+            metrics: {
+              psnr: r.metrics.psnr,
+              ssim: r.metrics.ssim,
+              mae: r.metrics.mae,
+              rmse: r.metrics.rmse,
+              processingTimeSeconds: r.metrics.processing_time_seconds,
             },
             createdAt: new Date().toISOString(),
-            benchmarked: data.benchmarked ?? true,
+            benchmarked: r.benchmarked ?? true,
           });
-        } catch (err) {
-          reject(err);
         }
-      } else {
-        reject(new Error(`Dehazing failed: ${xhr.status} ${xhr.statusText}`));
-      }
-    };
+      };
 
-    xhr.onerror = () => {
-      stopSimulatedProgress();
-      reject(new Error("Network error contacting model API"));
-    };
-    xhr.send(formData);
-  });
+      eventSource.onerror = () => {
+        eventSource?.close();
+        reject(new Error("Lost connection to the dehazing server."));
+      };
+    });
+  })();
+
+  return {
+    done,
+    cancel: () => {
+      cancelled = true;
+      eventSource?.close();
+    },
+  };
 }

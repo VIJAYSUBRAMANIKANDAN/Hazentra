@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { UploadCloud, X, CheckCircle2, Download, Loader2 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
+import DehazeLoader from "../components/DehazeLoader";
 import { useAppStore } from "../lib/store";
-import { dehazeImage } from "../lib/api";
+import { dehazeImage, type DehazeJobHandle } from "../lib/api";
 import { upscaleDataUrlTo4K } from "../lib/upscale";
 import type { QueueItem } from "../lib/types";
 
@@ -20,15 +21,24 @@ export default function Upload() {
   const [downloadingIdx, setDownloadingIdx] = useState<number | null>(null);
   const setBatchResults = useAppStore((s) => s.setBatchResults);
   const addBatchResult = useAppStore((s) => s.addBatchResult);
+  const jobHandles = useRef<Map<number, DehazeJobHandle>>(new Map());
 
   const runOne = useCallback(
     async (file: File, idx: number) => {
-      setQueue((q) => q.map((it, i) => (i === idx ? { ...it, status: "uploading" } : it)));
+      setQueue((q) =>
+        q.map((it, i) => (i === idx ? { ...it, status: "uploading", stage: "Uploading image" } : it))
+      );
+      const handle = dehazeImage(file, (evt) => {
+        setQueue((q) =>
+          q.map((it, i) => (i === idx ? { ...it, progress: evt.progress, status: evt.status, stage: evt.stage } : it))
+        );
+      });
+      jobHandles.current.set(idx, handle);
       try {
-        const result = await dehazeImage(file, (pct, stage) => {
-          setQueue((q) => q.map((it, i) => (i === idx ? { ...it, progress: pct, status: stage } : it)));
-        });
-        setQueue((q) => q.map((it, i) => (i === idx ? { ...it, status: "done", progress: 100, result } : it)));
+        const result = await handle.done;
+        setQueue((q) =>
+          q.map((it, i) => (i === idx ? { ...it, status: "done", progress: 100, stage: "Complete", result } : it))
+        );
         addBatchResult(result);
       } catch (e) {
         setQueue((q) =>
@@ -37,6 +47,8 @@ export default function Upload() {
           )
         );
         setError(e instanceof Error ? e.message : "Processing failed.");
+      } finally {
+        jobHandles.current.delete(idx);
       }
     },
     [addBatchResult]
@@ -78,6 +90,7 @@ export default function Upload() {
           file,
           previewUrl: URL.createObjectURL(file),
           progress: 0,
+          stage: "Queued",
           status: "pending",
         }));
 
@@ -93,6 +106,8 @@ export default function Upload() {
   );
 
   const removeItem = (idx: number) => {
+    jobHandles.current.get(idx)?.cancel();
+    jobHandles.current.delete(idx);
     setQueue((q) => {
       const item = q[idx];
       if (item) URL.revokeObjectURL(item.previewUrl);
@@ -238,29 +253,7 @@ export default function Upload() {
                           />
                         )}
 
-                        {isProcessing && (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ink-950/55 backdrop-blur-[1px]">
-                            <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
-                              <circle cx="28" cy="28" r="24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="4" />
-                              <circle
-                                cx="28"
-                                cy="28"
-                                r="24"
-                                fill="none"
-                                stroke="#5EEAD4"
-                                strokeWidth="4"
-                                strokeLinecap="round"
-                                strokeDasharray={2 * Math.PI * 24}
-                                strokeDashoffset={2 * Math.PI * 24 * (1 - item.progress / 100)}
-                                style={{ transition: "stroke-dashoffset 0.15s linear" }}
-                              />
-                            </svg>
-                            <span className="absolute text-sm font-semibold text-white">{item.progress}%</span>
-                            <span className="mt-9 text-[10px] uppercase tracking-wider text-crystal-300">
-                              Dehazing…
-                            </span>
-                          </div>
-                        )}
+                        {isProcessing && <DehazeLoader progress={item.progress} stage={item.stage} />}
 
                         {item.status === "done" && (
                           <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full bg-crystal-500/90 text-ink-950 text-[10px] font-semibold px-2 py-1">
@@ -279,11 +272,11 @@ export default function Upload() {
                         )}
                       </div>
 
-                      <div className="p-3">
+                      <div className="p-3 text-center">
                         <div className="text-xs text-mist-200 truncate">{item.file.name}</div>
-                        <div className="mt-0.5 text-[11px] text-mist-400 capitalize">
-                          {(item.file.size / (1024 * 1024)).toFixed(2)}MB ·{" "}
-                          {item.status === "processing" ? "Dehazing" : item.status}
+                        <div className="mt-0.5 text-[11px] text-mist-400">
+                          {(item.file.size / (1024 * 1024)).toFixed(2)}MB
+                          {isProcessing ? ` · ${item.stage}` : ` · ${item.status}`}
                         </div>
                         {item.status === "error" && item.errorMessage && (
                           <div className="mt-1 text-[11px] text-red-400">{item.errorMessage}</div>

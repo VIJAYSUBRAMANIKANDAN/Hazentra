@@ -12,6 +12,7 @@ calling plt.show()/plt.savefig().
 import io
 import time
 from dataclasses import dataclass
+from typing import Callable, Optional
 
 import cv2
 import numpy as np
@@ -34,6 +35,12 @@ transform = transforms.Compose(
         transforms.ToTensor(),
     ]
 )
+
+ProgressFn = Callable[[int, str], None]
+
+
+def _noop_progress(_pct: int, _stage: str) -> None:
+    return None
 
 
 @dataclass
@@ -64,28 +71,56 @@ class DehazingService:
         self.codebook = checkpoint["codebook"]
 
     @torch.no_grad()
-    def run(self, pil_image: Image.Image) -> DehazeOutput:
+    def run(
+        self,
+        pil_image: Image.Image,
+        on_progress: Optional[ProgressFn] = None,
+    ) -> DehazeOutput:
+        """
+        Runs the full pipeline, calling on_progress(pct, stage) after each real
+        computation checkpoint completes. Percentages are milestones tied to
+        actual finished work, not a timer — stages that genuinely take longer
+        (the per-patch retrieval loop below) report incrementally as they go,
+        everything else reports once when that step is done.
+        """
+        progress = on_progress or _noop_progress
         start = time.time()
 
         orig_img_pil = pil_image.convert("RGB")
         W_orig, H_orig = orig_img_pil.size
         orig_img_np = np.array(orig_img_pil).astype(np.float32) / 255.0
+        progress(5, "Decoding image")
 
         input_tensor = transform(orig_img_pil).unsqueeze(0).to(self.device)
+        progress(10, "Preparing tensors")
 
         # --- Network inference (STEP 25 verbatim) ---
         tokens = self.encoder.forward_features(input_tensor)
         patches = tokens[:, 1:, :]
         emb = patches.reshape(-1, 384)
+        progress(30, "Extracting features")
 
+        # This loop is the real per-patch retrieval work (196 patches for a
+        # 14x14 grid) — it's the one stage where we can report genuinely
+        # incremental progress as each patch is actually retrieved, rather
+        # than a single before/after checkpoint.
+        emb_np = emb.cpu().numpy()
+        total_patches = len(emb_np)
         retrieved = []
-        for e in emb.cpu().numpy():
+        report_every = max(1, total_patches // 20)  # ~20 updates across the loop
+        for i, e in enumerate(emb_np):
             retrieved.append(soft_retrieval(e, self.codebook))
+            if i % report_every == 0 or i == total_patches - 1:
+                frac = (i + 1) / total_patches
+                pct = 30 + int(frac * 25)  # this stage spans 30% -> 55%
+                progress(pct, "Matching haze patterns")
+
         retrieved_t = torch.tensor(retrieved).float().unsqueeze(1).to(self.device)
 
         delta = self.refiner(emb, retrieved_t)
         pred = retrieved_t + delta
         pred_beta_low = pred.reshape(14, 14).cpu().numpy()
+        progress(60, "Refining haze map")
 
         beta_map = cv2.resize(pred_beta_low, (W_orig, H_orig))
         beta_map = cv2.GaussianBlur(beta_map, (9, 9), 0)
@@ -99,7 +134,8 @@ class DehazingService:
         omega = 0.95  # Increased from 0.85 for more aggressive dehazing
         dark_channel = get_dark_channel(I / (atmospheric_light + 1e-6), patch_size=15)
         transmission_base = 1.0 - omega * dark_channel
-  
+        progress(68, "Estimating atmospheric light")
+
         beta_norm = beta_map / (beta_map.mean() + 1e-6)
         beta_norm = np.clip(beta_norm, 0.4, 2.2)
         transmission = np.clip(transmission_base * beta_norm, 0.0, 1.0)
@@ -136,6 +172,7 @@ class DehazingService:
         transmission = np.nan_to_num(transmission, nan=min_transmission, posinf=1.0, neginf=min_transmission)
 
         transmission = np.clip(transmission, min_transmission, 1.0)
+        progress(78, "Mapping transmission")
 
         t3 = np.expand_dims(transmission, axis=2)
 
@@ -155,6 +192,7 @@ class DehazingService:
 
         J = J_raw * (1 - blend_weight) + I * blend_weight
         J = np.clip(J, 0, 1)
+        progress(88, "Compositing result")
 
         orig_luminance = I.mean()
         dehazed_luminance = J.mean()
@@ -175,6 +213,7 @@ class DehazingService:
         J_bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
         J_uint8 = cv2.cvtColor(J_bgr, cv2.COLOR_BGR2RGB)
         J = J_uint8.astype(np.float32) / 255.0
+        progress(95, "Finalizing colors")
 
         elapsed = time.time() - start
 
