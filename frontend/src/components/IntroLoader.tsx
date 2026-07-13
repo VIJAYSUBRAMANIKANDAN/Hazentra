@@ -18,6 +18,17 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // A full 4K/60fps file is unnecessarily heavy to decode on phone GPUs and
+  // can itself cause stutter independent of any autoplay issue — serve a
+  // much lighter, lower-fps encode there instead. Computed once (device
+  // capability doesn't change mid-session), not on every render.
+  const [introSrc] = useState(() => {
+    if (typeof window === "undefined") return "/hazentra-intro.mp4";
+    const isConstrained =
+      window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+    return isConstrained ? "/hazentra-intro-mobile.mp4" : "/hazentra-intro.mp4";
+  });
+
   useEffect(() => {
     const alreadyPlayed = sessionStorage.getItem(SESSION_KEY);
     if (alreadyPlayed) {
@@ -80,19 +91,20 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
       // shorter than FADE_DURATION_S or timeupdate fires too sparsely.
       video.addEventListener("ended", finish);
 
-      // Try with sound first — if the browser already trusts this site
-      // (returning visitor, high engagement) this just works with no
-      // interaction needed at all.
-      video.muted = false;
-      video.play().catch(() => {
-        // Blocked: fall back to muted autoplay (always allowed) and wait
-        // for the first real interaction to unmute automatically.
-        video.muted = true;
-        setMuted(true);
-        video.play().catch(finish);
-        window.addEventListener("pointerdown", unmuteOnFirstGesture);
-        window.addEventListener("keydown", unmuteOnFirstGesture);
-      });
+      // Mobile browsers (iOS Safari, Chrome/Android) block *any* autoplay
+      // that isn't muted — with no exceptions, unlike desktop where a
+      // trusted/returning site can sometimes get unmuted autoplay. Worse,
+      // on several mobile browsers a failed unmuted play() attempt leaves
+      // the element in a state where a subsequent muted play() also stalls
+      // silently — so "try unmuted, fall back to muted" isn't just blocked
+      // on mobile, it can hang entirely. Always start muted (which is
+      // universally allowed everywhere) and unmute only after a real user
+      // gesture, via the listener below.
+      video.muted = true;
+      setMuted(true);
+      video.play().catch(finish);
+      window.addEventListener("pointerdown", unmuteOnFirstGesture);
+      window.addEventListener("keydown", unmuteOnFirstGesture);
     }
 
     return () => {
@@ -114,10 +126,11 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
     >
       <video
         ref={videoRef}
-        src="/hazentra-intro.mp4"
+        src={introSrc}
         className="w-full h-full object-contain"
         playsInline
         autoPlay
+        muted
         preload="auto"
       />
       {muted && (

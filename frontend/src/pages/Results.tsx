@@ -12,6 +12,7 @@ export default function Results() {
   const results = useAppStore((s) => s.batchResults);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   if (results.length === 0) {
     return (
@@ -35,12 +36,23 @@ export default function Results() {
 
   async function downloadSingle(result: DehazeResult) {
     setDownloadingId(result.id);
+    setDownloadError(null);
     try {
       const hiRes = await upscaleDataUrlTo4K(result.dehazedDataUrl);
+      const blob = dataUrlToBlob(hiRes);
+      const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = hiRes;
+      a.href = objectUrl;
       a.download = `dehazed-4k-${result.filename.replace(/\.[^.]+$/, "")}.png`;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
+      // Revoke shortly after — not immediately, since some mobile browsers
+      // process the download/navigation asynchronously and revoking too
+      // early can cancel it.
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "Couldn't prepare the download — please try again.");
     } finally {
       setDownloadingId(null);
     }
@@ -48,6 +60,7 @@ export default function Results() {
 
   async function downloadAll() {
     setZipping(true);
+    setDownloadError(null);
     try {
       const zip = new JSZip();
       for (const result of results) {
@@ -56,10 +69,16 @@ export default function Results() {
         zip.file(`dehazed-4k-${result.filename.replace(/\.[^.]+$/, "")}.png`, blob);
       }
       const zipBlob = await zip.generateAsync({ type: "blob" });
+      const objectUrl = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(zipBlob);
+      a.href = objectUrl;
       a.download = "hazentra-dehazed-images.zip";
+      document.body.appendChild(a);
       a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "Couldn't prepare the download — please try again.");
     } finally {
       setZipping(false);
     }
@@ -96,6 +115,10 @@ export default function Results() {
             </Link>
           </div>
         </div>
+
+        {downloadError && (
+          <div className="mb-4 text-xs text-red-400">{downloadError}</div>
+        )}
 
         <div className="space-y-8">
           {results.map((result, i) => (
