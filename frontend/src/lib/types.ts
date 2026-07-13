@@ -17,7 +17,7 @@ export interface DehazeResult {
   benchmarked: boolean;
 }
 
-export type QueueStatus = "pending" | "uploading" | "processing" | "done" | "error";
+export type QueueStatus = "pending" | "queued" | "uploading" | "processing" | "done" | "error";
 
 export interface QueueItem {
   file: File;

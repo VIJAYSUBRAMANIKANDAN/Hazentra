@@ -224,7 +224,8 @@ export default function Upload() {
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <AnimatePresence>
                 {queue.map((item, idx) => {
-                  const isProcessing = item.status === "uploading" || item.status === "processing";
+                  const isProcessing =
+                    item.status === "queued" || item.status === "uploading" || item.status === "processing";
                   return (
                     <motion.div
                       key={item.file.name + idx}
