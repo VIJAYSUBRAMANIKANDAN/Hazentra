@@ -4,12 +4,17 @@ import { Link } from "react-router-dom";
 import JSZip from "jszip";
 import Sidebar from "../components/Sidebar";
 import QualityMenu from "../components/QualityMenu";
+import BeforeAfterSlider from "../components/BeforeAfterSlider";
+import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
+import { useToast } from "../components/ui/toastContext";
 import { useAppStore } from "../lib/store";
 import { exportAtQuality, imageSrcToBlob, type QualityPreset } from "../lib/upscale";
 import type { DehazeResult } from "../lib/types";
 
 export default function Results() {
   const results = useAppStore((s) => s.batchResults);
+  const { showToast } = useToast();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -23,11 +28,10 @@ export default function Results() {
           <p className="mt-2 text-sm text-mist-400 max-w-sm">
             Upload one or more hazy images to see the dehazed output and quality metrics here.
           </p>
-          <Link
-            to="/upload"
-            className="mt-6 focus-ring rounded-lg bg-crystal-500 text-ink-950 text-sm font-semibold px-5 py-2.5 hover:bg-crystal-400 transition-colors"
-          >
-            Go to Upload
+          <Link to="/upload">
+            <Button size="lg" className="mt-6">
+              Go to Upload
+            </Button>
           </Link>
         </div>
       </div>
@@ -51,8 +55,11 @@ export default function Results() {
       // process the download/navigation asynchronously and revoking too
       // early can cancel it.
       setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+      showToast(`Download started (${preset})`, "success");
     } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Couldn't prepare the download — please try again.");
+      const message = err instanceof Error ? err.message : "Couldn't prepare the download — please try again.";
+      setDownloadError(message);
+      showToast(message, "error");
     } finally {
       setDownloadingId(null);
     }
@@ -77,8 +84,11 @@ export default function Results() {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+      showToast(`Download started — ${results.length} images (${preset})`, "success");
     } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Couldn't prepare the download — please try again.");
+      const message = err instanceof Error ? err.message : "Couldn't prepare the download — please try again.";
+      setDownloadError(message);
+      showToast(message, "error");
     } finally {
       setZipping(false);
     }
@@ -120,48 +130,54 @@ export default function Results() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06 }}
-              className="rounded-2xl border border-ink-700 bg-ink-900/40 p-4 sm:p-5"
             >
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-semibold text-white truncate">{result.filename}</span>
-                {results.length === 1 && (
-                  <QualityMenu
-                    label="Download dehazed"
-                    busy={downloadingId === result.id}
-                    onSelect={(preset) => downloadSingle(result, preset)}
-                  />
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <ImagePanel title="Original (hazy)" src={result.hazyDataUrl} alt={`Original hazy version of ${result.filename}`} />
-                <ImagePanel title="Dehazed" src={result.dehazedDataUrl} alt={`Dehazed version of ${result.filename}`} accent />
-              </div>
-
-              {results.length > 1 && (
-                <div className="mt-3 flex justify-end">
-                  <QualityMenu
-                    label="Download this one"
-                    busy={downloadingId === result.id}
-                    onSelect={(preset) => downloadSingle(result, preset)}
-                  />
+              <Card>
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-semibold text-white truncate">{result.filename}</span>
+                  {results.length === 1 && (
+                    <QualityMenu
+                      label="Download dehazed"
+                      busy={downloadingId === result.id}
+                      onSelect={(preset) => downloadSingle(result, preset)}
+                    />
+                  )}
                 </div>
-              )}
 
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-                {[
-                  { label: "PSNR", value: `${result.metrics.psnr.toFixed(2)} dB` },
-                  { label: "SSIM", value: result.metrics.ssim.toFixed(3) },
-                  { label: "MAE", value: result.metrics.mae.toFixed(3) },
-                  { label: "RMSE", value: result.metrics.rmse.toFixed(3) },
-                  { label: "Time", value: `${result.metrics.processingTimeSeconds.toFixed(1)}s` },
-                ].map((m) => (
-                  <div key={m.label} className="rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2">
-                    <div className="text-[10px] text-mist-400">{m.label}</div>
-                    <div className="mt-0.5 text-sm font-semibold text-crystal-400">{m.value}</div>
+                <BeforeAfterSlider
+                  beforeSrc={result.hazyDataUrl}
+                  afterSrc={result.dehazedDataUrl}
+                  beforeLabel="Hazy"
+                  afterLabel="Dehazed"
+                  beforeAlt={`Original hazy version of ${result.filename}`}
+                  afterAlt={`Dehazed version of ${result.filename}`}
+                  className="max-w-xl mx-auto sm:mx-0"
+                />
+
+                {results.length > 1 && (
+                  <div className="mt-3 flex justify-end">
+                    <QualityMenu
+                      label="Download this one"
+                      busy={downloadingId === result.id}
+                      onSelect={(preset) => downloadSingle(result, preset)}
+                    />
                   </div>
-                ))}
-              </div>
+                )}
+
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  {[
+                    { label: "PSNR", value: `${result.metrics.psnr.toFixed(2)} dB` },
+                    { label: "SSIM", value: result.metrics.ssim.toFixed(3) },
+                    { label: "MAE", value: result.metrics.mae.toFixed(3) },
+                    { label: "RMSE", value: result.metrics.rmse.toFixed(3) },
+                    { label: "Time", value: `${result.metrics.processingTimeSeconds.toFixed(1)}s` },
+                  ].map((m) => (
+                    <div key={m.label} className="rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2">
+                      <div className="text-[10px] text-mist-400">{m.label}</div>
+                      <div className="mt-0.5 text-sm font-semibold text-crystal-400">{m.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
             </motion.div>
           ))}
         </div>
@@ -170,22 +186,10 @@ export default function Results() {
           <p className="mt-6 text-[11px] text-mist-400/70 leading-relaxed max-w-2xl">
             PSNR / SSIM / MAE / RMSE are the model&apos;s averaged benchmark scores on the held-out validation
             set — there is no ground-truth clean image for your uploaded photos to compute these live against.
-            Downloads are exported at exactly the resolution you choose — from 360p up to full 4K.
+            Downloads are exported at exactly the resolution you choose — from 360p up to full 4K. Drag the
+            slider on each image to compare hazy vs. dehazed.
           </p>
         )}
-      </div>
-    </div>
-  );
-}
-
-function ImagePanel({ title, src, alt, accent }: { title: string; src: string; alt?: string; accent?: boolean }) {
-  return (
-    <div className={`rounded-xl border overflow-hidden ${accent ? "border-crystal-500/30" : "border-ink-700"}`}>
-      <div className="px-3 pt-2.5 pb-2">
-        <div className={`text-xs font-semibold ${accent ? "text-crystal-400" : "text-mist-300"}`}>{title}</div>
-      </div>
-      <div className="aspect-square bg-ink-800">
-        <img src={src} alt={alt ?? title} className="w-full h-full object-cover" />
       </div>
     </div>
   );

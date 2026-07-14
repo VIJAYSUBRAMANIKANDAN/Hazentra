@@ -45,6 +45,21 @@ Applied from the Hazentra enhancement spec, §1 (Frontend Optimization & Moderni
 ## New files
 - `src/hooks/useReducedMotion.ts`, `src/hooks/useOnlineStatus.ts` — small reusable hooks backing the above.
 
+## New: `src/components/ui/` component system
+Previously there was no shared component library — buttons, cards, and any dialog/notification pattern were either repeated Tailwind className strings per page or didn't exist at all. Added and wired up (not just written and left unused):
+- **`Button.tsx`** — `variant` (primary/secondary/ghost/danger) × `size` (sm/md/lg), loading state with spinner, `focus-ring` built in. Replaced the ad-hoc CTA buttons in `Upload.tsx`, `Results.tsx`, and `Settings.tsx` (Choose Files, Retry, View all results, download/reset actions).
+- **`Card.tsx`** — the `rounded-2xl border border-ink-700 bg-ink-900/60` pattern that was duplicated across pages, now one component. Used in `Results.tsx` for each result block.
+- **`Modal.tsx`** — real focus trap (Tab/Shift+Tab cycle inside the dialog), Escape closes it, focus returns to the trigger element on close, rendered via a portal. Previously **no modal existed anywhere in the app**. Wired into `Settings.tsx` as a "Reset preferences" confirmation — a genuine use, not a demo.
+- **`Toast.tsx`** + **`toastContext.ts`** — `ToastProvider` wraps the app in `App.tsx`; any page calls `useToast().showToast(message, kind)`. Wired into `Upload.tsx` (job success/failure, download started, offline/back-online) and `Results.tsx` (download success/failure) and `Settings.tsx` (preferences reset) — replacing what was previously silent completion.
+- **`Skeleton.tsx`** — animated placeholder (skips the pulse animation under `prefers-reduced-motion`, still shows a static block). Used inside `BeforeAfterSlider` while both images are loading, instead of a blank square.
+
+## New: `src/components/BeforeAfterSlider.tsx`
+Replaces the old side-by-side "Original (hazy)" / "Dehazed" image grid in `Results.tsx` with a single draggable comparison slider — mouse drag, touch drag, and arrow-key adjustment when the handle is focused (so this doesn't regress keyboard accessibility versus what it replaced). Shows the `Skeleton` overlay until both images finish loading.
+
+## `tailwind.config.js`
+- Added a couple of spacing-scale values (`18`, `22`) that fill gaps in the default 4px scale.
+- Added a `borderRadius` scale (`sm`/`md`/`lg`/`xl`/`2xl`) and two more `boxShadow` steps (`sm`/`md`) alongside the existing `glow`/`card` — the "standard button sizes / consistent shadows / border-radius system" from the UI review is now the actual token set `Button`/`Card`/`Modal` pull from, not just a spec suggestion.
+
 ## Removed
 - `src/index.css` — dead file left over from the Vite scaffold template (unrelated light-theme color tokens, unused `#root` width rule). Never imported anywhere (`main.tsx` only imports `styles/globals.css`) — confirmed via grep before deletion.
 
@@ -52,4 +67,5 @@ Applied from the Hazentra enhancement spec, §1 (Frontend Optimization & Moderni
 Worth calling out explicitly since the audit noted it: `.focus-ring` was already defined globally in `globals.css` and applied consistently across `Navbar.tsx`/`Sidebar.tsx`/`QualityMenu.tsx`/`Upload.tsx`, and a global `prefers-reduced-motion` CSS rule already capped animation/transition durations. The accessibility gaps that existed were narrower than a generic audit would assume — namely the intro overlay's blanket `aria-hidden` and GSAP's direct style manipulation bypassing the CSS rule, both fixed above.
 
 ## Not included in this pass (documented, not implemented)
-- Toast notifications, before/after comparison slider, Vitest/Playwright setup, Storybook — all specified with code in the main enhancement-spec document but not included in this code drop to keep this revision reviewable as one PR-sized change.
+- Vitest/Playwright test setup, Storybook — specified in the main enhancement-spec document but not included in this code drop.
+- The `Button`/`Card` components weren't retrofitted onto every single existing button/card in the app (e.g. `Navbar.tsx`/`Sidebar.tsx` nav items, `QualityMenu.tsx`'s dropdown items) — those already had consistent, working styling of their own (see the accessibility note above) and swapping them for the new components would be a pure refactor with no functional change, so it was left out to keep this diff focused on things that actually behave differently now.

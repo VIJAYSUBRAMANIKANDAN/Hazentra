@@ -1,5 +1,9 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import Sidebar from "../components/Sidebar";
+import Modal from "../components/ui/Modal";
+import Button from "../components/ui/Button";
+import { useToast } from "../components/ui/toastContext";
 import { useAppStore } from "../lib/store";
 
 export default function Settings() {
@@ -7,6 +11,15 @@ export default function Settings() {
   const setOutputFormat = useAppStore((s) => s.setOutputFormat);
   const alphaBlending = useAppStore((s) => s.alphaBlending);
   const setAlphaBlending = useAppStore((s) => s.setAlphaBlending);
+  const { showToast } = useToast();
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+
+  const handleReset = () => {
+    setOutputFormat("PNG");
+    setAlphaBlending(false);
+    setResetModalOpen(false);
+    showToast("Preferences reset to defaults", "success");
+  };
 
   return (
     <div className="mx-auto max-w-[1680px] px-5 sm:px-8 py-8 flex gap-8">
@@ -47,7 +60,35 @@ export default function Settings() {
             Developed by R Vijay Subramanikandan
           </div>
         </Section>
+
+        <Section title="Reset" delay={0.24}>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-mist-300">Restore output format and alpha blending to defaults</span>
+            <Button variant="danger" size="sm" onClick={() => setResetModalOpen(true)}>
+              Reset preferences
+            </Button>
+          </div>
+        </Section>
       </div>
+
+      <Modal
+        open={resetModalOpen}
+        onClose={() => setResetModalOpen(false)}
+        title="Reset preferences?"
+        footer={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setResetModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleReset}>
+              Reset
+            </Button>
+          </>
+        }
+      >
+        This sets output format back to PNG and turns off alpha blending. It doesn't affect anything you've
+        already downloaded.
+      </Modal>
     </div>
   );
 }

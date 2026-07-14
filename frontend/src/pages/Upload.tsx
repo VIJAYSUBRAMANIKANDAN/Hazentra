@@ -1,10 +1,12 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { UploadCloud, X, CheckCircle2, RotateCw, WifiOff } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import DehazeLoader from "../components/DehazeLoader";
 import QualityMenu from "../components/QualityMenu";
+import Button from "../components/ui/Button";
+import { useToast } from "../components/ui/toastContext";
 import { useAppStore } from "../lib/store";
 import { dehazeImage, type DehazeJobHandle } from "../lib/api";
 import { exportAtQuality, imageSrcToBlob, type QualityPreset } from "../lib/upscale";
@@ -23,6 +25,8 @@ const MAX_CONCURRENT = 3;
 export default function Upload() {
   const navigate = useNavigate();
   const online = useOnlineStatus();
+  const { showToast } = useToast();
+  const wasOnline = useRef(online);
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -47,6 +51,16 @@ export default function Upload() {
 
   const runOneRef = useRef<(file: File, idx: number) => Promise<void>>(async () => {});
 
+  useEffect(() => {
+    if (wasOnline.current === online) return;
+    wasOnline.current = online;
+    if (!online) {
+      showToast("Network disconnected — uploads will resume once you're back online.", "warning");
+    } else {
+      showToast("Back online.", "info");
+    }
+  }, [online, showToast]);
+
   const runOne = useCallback(
     async (file: File, idx: number) => {
       setQueue((q) =>
@@ -64,20 +78,21 @@ export default function Upload() {
           q.map((it, i) => (i === idx ? { ...it, status: "done", progress: 100, stage: "Complete", result } : it))
         );
         addBatchResult(result);
+        showToast(`${file.name} dehazed successfully`, "success");
       } catch (e) {
+        const message = e instanceof Error ? e.message : "Failed";
         setQueue((q) =>
-          q.map((it, i) =>
-            i === idx ? { ...it, status: "error", errorMessage: e instanceof Error ? e.message : "Failed" } : it
-          )
+          q.map((it, i) => (i === idx ? { ...it, status: "error", errorMessage: message } : it))
         );
-        setError(e instanceof Error ? e.message : "Processing failed.");
+        setError(message);
+        showToast(`${file.name} failed: ${message}`, "error");
       } finally {
         jobHandles.current.delete(idx);
         activeCount.current -= 1;
         startNextInQueue();
       }
     },
-    [addBatchResult, startNextInQueue]
+    [addBatchResult, startNextInQueue, showToast]
   );
   runOneRef.current = runOne;
 
@@ -179,8 +194,11 @@ export default function Upload() {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+      showToast(`Download started (${preset})`, "success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't prepare the download — please try again.");
+      const message = err instanceof Error ? err.message : "Couldn't prepare the download — please try again.";
+      setError(message);
+      showToast(message, "error");
     } finally {
       setDownloadingIdx(null);
     }
@@ -241,13 +259,9 @@ export default function Upload() {
           </motion.div>
           <div className="text-lg font-semibold text-white">Drag &amp; Drop hazy image</div>
           <div className="mt-1 text-xs text-mist-400">or browse files (JPG, PNG) — up to {MAX_IMAGES} at once</div>
-          <button
-            onClick={() => inputRef.current?.click()}
-            disabled={!online}
-            className="mt-6 focus-ring rounded-lg bg-crystal-500 text-ink-950 text-sm font-semibold px-5 py-2.5 hover:bg-crystal-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <Button onClick={() => inputRef.current?.click()} disabled={!online} size="lg" className="mt-6">
             Choose Files
-          </button>
+          </Button>
           <input
             ref={inputRef}
             type="file"
@@ -280,13 +294,9 @@ export default function Upload() {
             <div className="flex items-center justify-between mb-3">
               <div className="text-sm font-semibold text-white">Queue</div>
               {anyDone && (
-                <button
-                  onClick={() => navigate("/results")}
-                  className="focus-ring inline-flex items-center gap-1.5 text-xs font-semibold text-crystal-400 border border-crystal-500/30 rounded-lg px-3 py-1.5 hover:bg-crystal-500/10"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
+                <Button variant="secondary" size="sm" icon={<CheckCircle2 className="w-3.5 h-3.5" />} onClick={() => navigate("/results")}>
                   View all in Results
-                </button>
+                </Button>
               )}
             </div>
 
@@ -351,13 +361,9 @@ export default function Upload() {
                         {item.status === "error" && item.errorMessage && (
                           <div className="mt-1 flex flex-col items-center gap-1.5">
                             <div className="text-[11px] text-red-400">{item.errorMessage}</div>
-                            <button
-                              onClick={() => retryItem(idx)}
-                              className="focus-ring inline-flex items-center gap-1 rounded-md border border-ink-600 px-2.5 py-1 text-[11px] font-medium text-mist-200 hover:text-white hover:border-mist-400/50 transition-colors"
-                            >
-                              <RotateCw className="w-3 h-3" />
+                            <Button variant="secondary" size="sm" icon={<RotateCw className="w-3 h-3" />} onClick={() => retryItem(idx)}>
                               Retry
-                            </button>
+                            </Button>
                           </div>
                         )}
                         {item.status === "done" && (
@@ -378,12 +384,9 @@ export default function Upload() {
 
         {allDone && queue.length > 1 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-6">
-            <button
-              onClick={() => navigate("/results")}
-              className="focus-ring w-full sm:w-auto rounded-lg bg-crystal-500 text-ink-950 text-sm font-semibold px-6 py-3 hover:bg-crystal-400 transition-colors"
-            >
+            <Button onClick={() => navigate("/results")} size="lg" className="w-full sm:w-auto">
               View all results
-            </button>
+            </Button>
           </motion.div>
         )}
       </div>

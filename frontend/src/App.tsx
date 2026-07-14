@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import IntroLoader from "./components/IntroLoader";
 import DehazeLoader from "./components/DehazeLoader";
+import { ToastProvider } from "./components/ui/Toast";
 
 // Route-level code splitting: each page ships as its own chunk instead of
 // being bundled into the initial load. Only the page the visitor actually
@@ -25,7 +26,7 @@ export default function App() {
   const [introDone, setIntroDone] = useState(false);
 
   return (
-    <>
+    <ToastProvider>
       {!introDone && <IntroLoader onDone={() => setIntroDone(true)} />}
       <BrowserRouter>
         <Layout>
@@ -40,6 +41,6 @@ export default function App() {
           </Suspense>
         </Layout>
       </BrowserRouter>
-    </>
+    </ToastProvider>
   );
 }
