@@ -28,6 +28,10 @@ export default {
         display: ["'Space Grotesk'", "system-ui", "sans-serif"],
         body: ["'Inter'", "system-ui", "sans-serif"],
       },
+      spacing: {
+        18: "4.5rem",
+        22: "5.5rem",
+      },
       boxShadow: {
         glow: "0 0 40px -8px rgba(94,234,212,0.35)",
         card: "0 1px 0 0 rgba(255,255,255,0.03) inset, 0 20px 50px -20px rgba(0,0,0,0.7)",

@@ -112,12 +112,45 @@ export async function upscaleDataUrlTo4K(dataUrl: string): Promise<string> {
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    // Result images are now served from the backend's own origin
+    // (e.g. localhost:8000) rather than embedded as data: URLs, so the
+    // canvas operations below would otherwise "taint" the canvas and throw
+    // a SecurityError on toDataURL(). The backend's CORS middleware already
+    // allows the frontend's origin, so requesting anonymous cross-origin
+    // access here is sufficient. Data URLs ignore this attribute entirely,
+    // so it's always safe to set.
+    img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = src;
   });
 }
 
+/**
+ * Converts an image source to a Blob for download. Handles both cases:
+ * - a `data:` URL (what exportAtQuality returns after actually resizing an
+ *   image through canvas)
+ * - a plain `http(s):` URL (what a result image is by default now — it's
+ *   served from the backend's /image/{kind} endpoint rather than embedded,
+ *   so no resize was needed and there's nothing to decode locally)
+ */
+export async function imageSrcToBlob(src: string): Promise<Blob> {
+  if (!src.startsWith("data:")) {
+    const res = await fetch(src);
+    if (!res.ok) throw new Error(`Failed to fetch image for download: ${res.status}`);
+    return res.blob();
+  }
+  const [header, base64] = src.split(",");
+  const mime = header.match(/:(.*?);/)?.[1] ?? "image/png";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+/** @deprecated Use imageSrcToBlob instead — kept only for source
+ * compatibility with any external callers; note this one only handles
+ * `data:` URLs and will throw on a plain http(s) URL. */
 export function dataUrlToBlob(dataUrl: string): Blob {
   const [header, base64] = dataUrl.split(",");
   const mime = header.match(/:(.*?);/)?.[1] ?? "image/png";

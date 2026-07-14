@@ -24,6 +24,7 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
   const [muted, setMuted] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const finishRef = useRef<() => void>(() => {});
 
   // A full 4K/60fps file is unnecessarily heavy to decode on phone GPUs and
   // can itself cause stutter independent of any autoplay issue — serve a
@@ -38,7 +39,10 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     const alreadyPlayed = sessionStorage.getItem(SESSION_KEY);
-    if (alreadyPlayed) {
+    const reducedMotion =
+      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (alreadyPlayed || reducedMotion) {
+      sessionStorage.setItem(SESSION_KEY, "1");
       setMounted(false);
       onDone();
       return;
@@ -60,6 +64,7 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
       });
     };
 
+    finishRef.current = finish;
     const fallback = setTimeout(finish, FALLBACK_TIMEOUT_MS);
     const video = videoRef.current;
     let fadeStarted = false;
@@ -148,7 +153,6 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
     <div
       ref={overlayRef}
       className="fixed inset-0 z-[100] bg-ink-950 flex items-center justify-center overflow-hidden"
-      aria-hidden="true"
     >
       <video
         ref={videoRef}
@@ -158,12 +162,20 @@ export default function IntroLoader({ onDone }: { onDone: () => void }) {
         autoPlay
         muted
         preload="auto"
+        aria-hidden="true"
       />
       {muted && (
-        <span className="absolute bottom-6 right-6 text-[11px] text-mist-400/70">
+        <span className="absolute bottom-6 right-6 text-[11px] text-mist-400/70" aria-hidden="true">
           Click anywhere for sound
         </span>
       )}
+      <button
+        type="button"
+        onClick={() => finishRef.current()}
+        className="focus-ring absolute top-5 right-5 rounded-lg border border-mist-400/30 bg-ink-950/60 px-3 py-1.5 text-xs font-medium text-mist-200 hover:text-white hover:border-mist-400/60 transition-colors"
+      >
+        Skip intro
+      </button>
     </div>
   );
 }

@@ -1,12 +1,17 @@
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
 export default function HazeField() {
   const a = useRef<HTMLDivElement>(null);
   const b = useRef<HTMLDivElement>(null);
   const c = useRef<HTMLDivElement>(null);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
+    // GSAP animates transforms directly, bypassing the CSS
+    // prefers-reduced-motion rule in globals.css, so it needs its own guard.
+    if (reducedMotion) return;
     const tl = gsap.timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } });
     tl.to(a.current, { x: 70, y: -40, duration: 10 }, 0)
       .to(b.current, { x: -60, y: 50, duration: 13 }, 0)
@@ -14,7 +19,7 @@ export default function HazeField() {
     return () => {
       tl.kill();
     };
-  }, []);
+  }, [reducedMotion]);
 
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden -z-10">

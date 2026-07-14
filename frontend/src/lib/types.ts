@@ -9,6 +9,11 @@ export interface DehazeMetrics {
 export interface DehazeResult {
   id: string;
   filename: string;
+  /** Despite the name, these are now plain http(s) URLs pointing at the
+   * backend's GET /api/v1/dehaze/jobs/{id}/image/{kind} endpoint, not
+   * embedded base64 `data:` URLs — kept the field names to avoid touching
+   * every call site, since `<img src>` and the upscale/download helpers in
+   * lib/upscale.ts both work the same either way. */
   hazyDataUrl: string;
   transmissionDataUrl: string;
   dehazedDataUrl: string;

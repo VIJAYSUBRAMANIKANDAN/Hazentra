@@ -1,0 +1,29 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+  pull_request:
+    paths:
+      - "backend/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pip-audit
+      - name: Security audit
+        run: pip-audit -r requirements.txt || true # non-blocking until findings are triaged
+      - name: Import / syntax check
+        run: python -c "from app.main import app; print(len(app.routes), 'routes registered')"
+        env:
+          MODEL_CHECKPOINT_PATH: weights/does_not_exist.pth

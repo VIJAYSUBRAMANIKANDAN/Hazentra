@@ -1,13 +1,14 @@
 import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, X, CheckCircle2 } from "lucide-react";
+import { UploadCloud, X, CheckCircle2, RotateCw, WifiOff } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import DehazeLoader from "../components/DehazeLoader";
 import QualityMenu from "../components/QualityMenu";
 import { useAppStore } from "../lib/store";
 import { dehazeImage, type DehazeJobHandle } from "../lib/api";
-import { exportAtQuality, dataUrlToBlob, type QualityPreset } from "../lib/upscale";
+import { exportAtQuality, imageSrcToBlob, type QualityPreset } from "../lib/upscale";
+import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import type { QueueItem } from "../lib/types";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/jpg"];
@@ -21,6 +22,7 @@ const MAX_CONCURRENT = 3;
 
 export default function Upload() {
   const navigate = useNavigate();
+  const online = useOnlineStatus();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -146,13 +148,24 @@ export default function Upload() {
     });
   };
 
+  const retryItem = (idx: number) => {
+    const file = filesByIndex.current.get(idx);
+    if (!file) return;
+    setError(null);
+    setQueue((q) =>
+      q.map((it, i) => (i === idx ? { ...it, status: "pending", progress: 0, stage: "Queued", errorMessage: undefined } : it))
+    );
+    pendingIndices.current.push(idx);
+    startNextInQueue();
+  };
+
   const downloadOne = async (idx: number, preset: QualityPreset) => {
     const item = queue[idx];
     if (!item?.result) return;
     setDownloadingIdx(idx);
     try {
       const exported = await exportAtQuality(item.result.dehazedDataUrl, preset);
-      const blob = dataUrlToBlob(exported);
+      const blob = await imageSrcToBlob(exported);
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
@@ -193,6 +206,18 @@ export default function Upload() {
           </span>
         </div>
 
+        {!online && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-300"
+            role="status"
+          >
+            <WifiOff className="w-3.5 h-3.5 shrink-0" />
+            You're offline — uploads will fail until your connection comes back.
+          </motion.div>
+        )}
+
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -218,7 +243,8 @@ export default function Upload() {
           <div className="mt-1 text-xs text-mist-400">or browse files (JPG, PNG) — up to {MAX_IMAGES} at once</div>
           <button
             onClick={() => inputRef.current?.click()}
-            className="mt-6 focus-ring rounded-lg bg-crystal-500 text-ink-950 text-sm font-semibold px-5 py-2.5 hover:bg-crystal-400 transition-colors"
+            disabled={!online}
+            className="mt-6 focus-ring rounded-lg bg-crystal-500 text-ink-950 text-sm font-semibold px-5 py-2.5 hover:bg-crystal-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Choose Files
           </button>
@@ -323,7 +349,16 @@ export default function Upload() {
                           {isProcessing ? ` · ${item.stage}` : ` · ${item.status}`}
                         </div>
                         {item.status === "error" && item.errorMessage && (
-                          <div className="mt-1 text-[11px] text-red-400">{item.errorMessage}</div>
+                          <div className="mt-1 flex flex-col items-center gap-1.5">
+                            <div className="text-[11px] text-red-400">{item.errorMessage}</div>
+                            <button
+                              onClick={() => retryItem(idx)}
+                              className="focus-ring inline-flex items-center gap-1 rounded-md border border-ink-600 px-2.5 py-1 text-[11px] font-medium text-mist-200 hover:text-white hover:border-mist-400/50 transition-colors"
+                            >
+                              <RotateCw className="w-3 h-3" />
+                              Retry
+                            </button>
+                          </div>
                         )}
                         {item.status === "done" && (
                           <QualityMenu

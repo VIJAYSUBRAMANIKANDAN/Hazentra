@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import Sidebar from "../components/Sidebar";
 import QualityMenu from "../components/QualityMenu";
 import { useAppStore } from "../lib/store";
-import { exportAtQuality, dataUrlToBlob, type QualityPreset } from "../lib/upscale";
+import { exportAtQuality, imageSrcToBlob, type QualityPreset } from "../lib/upscale";
 import type { DehazeResult } from "../lib/types";
 
 export default function Results() {
@@ -39,7 +39,7 @@ export default function Results() {
     setDownloadError(null);
     try {
       const exported = await exportAtQuality(result.dehazedDataUrl, preset);
-      const blob = dataUrlToBlob(exported);
+      const blob = await imageSrcToBlob(exported);
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
@@ -65,7 +65,7 @@ export default function Results() {
       const zip = new JSZip();
       for (const result of results) {
         const exported = await exportAtQuality(result.dehazedDataUrl, preset);
-        const blob = dataUrlToBlob(exported);
+        const blob = await imageSrcToBlob(exported);
         zip.file(`dehazed-${preset}-${result.filename.replace(/\.[^.]+$/, "")}.png`, blob);
       }
       const zipBlob = await zip.generateAsync({ type: "blob" });
@@ -134,8 +134,8 @@ export default function Results() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <ImagePanel title="Original (hazy)" src={result.hazyDataUrl} />
-                <ImagePanel title="Dehazed" src={result.dehazedDataUrl} accent />
+                <ImagePanel title="Original (hazy)" src={result.hazyDataUrl} alt={`Original hazy version of ${result.filename}`} />
+                <ImagePanel title="Dehazed" src={result.dehazedDataUrl} alt={`Dehazed version of ${result.filename}`} accent />
               </div>
 
               {results.length > 1 && (
@@ -178,14 +178,14 @@ export default function Results() {
   );
 }
 
-function ImagePanel({ title, src, accent }: { title: string; src: string; accent?: boolean }) {
+function ImagePanel({ title, src, alt, accent }: { title: string; src: string; alt?: string; accent?: boolean }) {
   return (
     <div className={`rounded-xl border overflow-hidden ${accent ? "border-crystal-500/30" : "border-ink-700"}`}>
       <div className="px-3 pt-2.5 pb-2">
         <div className={`text-xs font-semibold ${accent ? "text-crystal-400" : "text-mist-300"}`}>{title}</div>
       </div>
       <div className="aspect-square bg-ink-800">
-        <img src={src} alt={title} className="w-full h-full object-cover" />
+        <img src={src} alt={alt ?? title} className="w-full h-full object-cover" />
       </div>
     </div>
   );

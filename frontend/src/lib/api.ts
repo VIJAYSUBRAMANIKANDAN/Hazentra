@@ -8,6 +8,13 @@ export function getApiBase() {
   return API_BASE;
 }
 
+/** Builds the URL for a completed job's result image. `kind` matches what
+ * the backend writes to disk: the original (EXIF-stripped) upload, the
+ * transmission map visualization, or the final dehazed output. */
+export function jobImageUrl(jobId: string, kind: "hazy" | "transmission" | "dehazed"): string {
+  return `${API_BASE}/api/v1/dehaze/jobs/${jobId}/image/${kind}`;
+}
+
 export type DehazeProgressEvent = {
   status: "queued" | "uploading" | "processing" | "done" | "error";
   progress: number;
@@ -41,7 +48,7 @@ export function dehazeImage(
     formData.append("file", file);
     onProgress?.({ status: "uploading", progress: 2, stage: "Uploading image" });
 
-    const createRes = await fetch(`${API_BASE}/api/dehaze/jobs`, {
+    const createRes = await fetch(`${API_BASE}/api/v1/dehaze/jobs`, {
       method: "POST",
       body: formData,
     });
@@ -54,7 +61,7 @@ export function dehazeImage(
 
     // 2. Stream real progress from the backend until it's done or errors.
     return await new Promise<DehazeResult>((resolve, reject) => {
-      eventSource = new EventSource(`${API_BASE}/api/dehaze/jobs/${jobId}/stream`);
+      eventSource = new EventSource(`${API_BASE}/api/v1/dehaze/jobs/${jobId}/stream`);
 
       // The browser's EventSource already auto-reconnects on its own after a
       // transient network blip — closing/rejecting on the first "error"
@@ -98,9 +105,6 @@ export function dehazeImage(
           eventSource?.close();
           const r = data.result as {
             id: string;
-            hazy_image: string;
-            transmission_map: string;
-            dehazed_image: string;
             metrics: {
               psnr: number;
               ssim: number;
@@ -110,12 +114,18 @@ export function dehazeImage(
             };
             benchmarked?: boolean;
           };
+          // Result images are no longer embedded as base64 in this payload —
+          // the backend writes them to disk and serves them from
+          // /api/v1/dehaze/jobs/{id}/image/{kind}, so we just build the URLs
+          // here. This is a normal <img src> URL, not a data: URL, so the
+          // browser streams/decodes/caches it the ordinary way instead of
+          // waiting on one giant JSON string to fully arrive first.
           resolve({
             id: r.id,
             filename: file.name,
-            hazyDataUrl: r.hazy_image,
-            transmissionDataUrl: r.transmission_map,
-            dehazedDataUrl: r.dehazed_image,
+            hazyDataUrl: jobImageUrl(r.id, "hazy"),
+            transmissionDataUrl: jobImageUrl(r.id, "transmission"),
+            dehazedDataUrl: jobImageUrl(r.id, "dehazed"),
             metrics: {
               psnr: r.metrics.psnr,
               ssim: r.metrics.ssim,
